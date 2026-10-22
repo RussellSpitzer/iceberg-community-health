@@ -1,7 +1,7 @@
 name: collect
 
-# Started by hand. A cron schedule and Pages publication stay off until
-# docs/METRICS.md and docs/LIMITATIONS.md have been reviewed against a real dataset.
+# Started by hand. A cron schedule stays off until a live dataset is reviewed.
+# The static site is deployed by the pages workflow.
 on:
   workflow_dispatch:
 

@@ -83,10 +83,12 @@ def _html(report: dict) -> str:
 body {{ font-family: sans-serif; margin: 2rem; }}
 table {{ border-collapse: collapse; }}
 td, th {{ border: 1px solid #ccc; padding: 0.3rem 0.6rem; text-align: left; }}
+.sample {{ background: #fff3cd; padding: 0.8rem 1rem; }}
 </style>
 </head>
 <body>
 <h1>Iceberg ecosystem health</h1>
+{_banner(report)}
 <p>As of {_esc(report["as_of"])}. Definition {_esc(report["definition_version"])}.
 Completed month {_esc(report["window_start"])} to {_esc(report["window_end"])}.</p>
 <p>Each metric is reported on its own. This page does not combine them into a score.</p>
@@ -104,6 +106,15 @@ Completed month {_esc(report["window_start"])} to {_esc(report["window_end"])}.<
 </body>
 </html>
 """
+
+
+def _banner(report: dict) -> str:
+    if report.get("dataset") != "sample":
+        return ""
+    return (
+        "<p class=\"sample\">Sample dataset from the checked-in fixture. "
+        "These figures are not measurements of the Apache Iceberg project.</p>"
+    )
 
 
 def _candidates(report: dict) -> str:

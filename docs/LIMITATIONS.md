@@ -36,6 +36,10 @@ Thresholds in the dashboard are suggestions for a person to run an existing
 read-only Magpie command. Nothing in the report posts a comment, requests a
 reviewer, or publishes the page.
 
-The GitHub Actions workflow `collect` runs only when someone starts it. A
-nightly schedule and GitHub Pages publication stay off until this definition
-file and a reviewed dataset exist. Enable a schedule only after that review.
+The history behind a report is the local Parquet store under `data/`. That
+directory is not committed. GitHub Pages serves only the rendered HTML, JSON,
+and CSV. The page published from `main` is the checked-in sample fixture until
+a reviewed live dataset replaces it.
+
+The `collect` workflow runs only when someone starts it. A nightly schedule
+stays off until a live dataset has been reviewed.

@@ -59,6 +59,7 @@ def _run(args: argparse.Namespace) -> int:
     else:
         manifest = {"run_id": run_id, "sources": {}}
     report = report_from_store(store, project, as_of, manifest)
+    report["dataset"] = "sample" if args.fixture else "collected"
     write_report(report, args.output)
     print(args.output / "index.html")
     return 0

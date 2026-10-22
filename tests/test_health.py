@@ -242,6 +242,7 @@ def test_failed_source_keeps_the_previous_snapshot(tmp_path, project):
 
 def test_offline_dashboard_has_no_composite_score(tmp_path, project):
     report = compute(annotate(load_fixture(FIXTURE), project), project, AS_OF)
+    report["dataset"] = "sample"
     report["reviewer_candidates"] = [{"login": "reviewer1", "reviews": 1}]
     write_report(report, tmp_path)
     payload = json.loads((tmp_path / "metrics.json").read_text())
@@ -249,6 +250,7 @@ def test_offline_dashboard_has_no_composite_score(tmp_path, project):
     html = (tmp_path / "index.html").read_text()
     assert "contributor_hhi" in html
     assert "does not combine them into a score" in html
+    assert "not measurements of the Apache Iceberg project" in html
     csv_text = (tmp_path / "metrics.csv").read_text().splitlines()[0]
     assert csv_text.startswith("metric_id,definition_version,scope_type")
     candidates = (tmp_path / "reviewer-candidates.md").read_text()

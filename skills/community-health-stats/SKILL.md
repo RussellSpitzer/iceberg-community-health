@@ -30,8 +30,9 @@ Read `site/output/index.html`, `site/output/metrics.json`, and
 ## Rules
 
 - Read public data only. Do not post reviews, comments, labels, or mail.
-- Do not publish GitHub Pages or enable the nightly schedule. Publishing is a
-  separate human action, described in `docs/LIMITATIONS.md`.
+- The Pages workflow deploys the rendered site. Do not enable the nightly
+  collect schedule. A live dataset replacing the sample is a separate human
+  action, described in `docs/LIMITATIONS.md`.
 - Do not add a composite score or a sentiment metric.
 - Report withheld metrics as `insufficient_data`. Do not fill them in.
 - When `recommendations` names a follow-up, repeat that suggestion and stop.
