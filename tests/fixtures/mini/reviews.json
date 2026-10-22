@@ -1,0 +1,44 @@
+[
+  {
+    "repo": "apache/iceberg",
+    "number": 101,
+    "reviewer": "reviewer1",
+    "submitted_at": "2026-09-02T06:00:00Z",
+    "state": "APPROVED"
+  },
+  {
+    "repo": "apache/iceberg",
+    "number": 102,
+    "reviewer": "reviewer2",
+    "submitted_at": "2026-09-02T06:00:00Z",
+    "state": "APPROVED"
+  },
+  {
+    "repo": "apache/iceberg",
+    "number": 103,
+    "reviewer": "reviewer3",
+    "submitted_at": "2026-09-02T06:00:00Z",
+    "state": "APPROVED"
+  },
+  {
+    "repo": "apache/iceberg",
+    "number": 104,
+    "reviewer": "reviewer4",
+    "submitted_at": "2026-09-02T06:00:00Z",
+    "state": "APPROVED"
+  },
+  {
+    "repo": "apache/iceberg",
+    "number": 105,
+    "reviewer": "reviewer5",
+    "submitted_at": "2026-09-02T06:00:00Z",
+    "state": "APPROVED"
+  },
+  {
+    "repo": "apache/iceberg",
+    "number": 201,
+    "reviewer": null,
+    "submitted_at": "2026-09-02T01:00:00Z",
+    "state": "COMMENTED"
+  }
+]

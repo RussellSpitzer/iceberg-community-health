@@ -1,0 +1,31 @@
+{
+  "skill": "community-health-stats",
+  "mode": "offline-fixture",
+  "command": [
+    "iceberg-community-health",
+    "run",
+    "--fixture",
+    "tests/fixtures/mini",
+    "--as-of",
+    "2026-10-15T00:00:00Z"
+  ],
+  "expect": {
+    "score": "absent",
+    "ecosystem": {
+      "contributor_hhi": 0.358025,
+      "active_contributors": 5,
+      "new_contributors": 4,
+      "sustained_contributors": 1,
+      "first_to_second_retention": 0.5,
+      "stale_pr_rate": 0.6,
+      "pr_backlog": 5,
+      "first_review_hours": 6,
+      "merge_latency_hours": 24,
+      "reviewer_hhi": 0.2,
+      "unanswered_rate": 0.166667,
+      "dev_list_reply_hours": 6,
+      "stable_releases": 1,
+      "time_since_last_release_days": 136
+    }
+  }
+}

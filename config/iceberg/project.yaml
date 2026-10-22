@@ -1,0 +1,126 @@
+schema_version: 1
+project_id: iceberg
+definition_version: "1.0"
+
+asf:
+  committee: iceberg
+  roster_url: https://whimsy.apache.org/public/committee-info.json
+  archive_url: https://archive.apache.org/dist/iceberg/
+  dev_list: dev@iceberg.apache.org
+
+mailing_lists:
+  - id: dev
+    domain: iceberg.apache.org
+    list: dev
+
+repositories:
+  - id: apache/iceberg
+    slug: iceberg
+    classify_paths: true
+    language: java
+  - id: apache/iceberg-python
+    slug: iceberg-python
+    classify_paths: false
+    component: python
+    language: python
+  - id: apache/iceberg-rust
+    slug: iceberg-rust
+    classify_paths: false
+    component: rust
+    language: rust
+  - id: apache/iceberg-go
+    slug: iceberg-go
+    classify_paths: false
+    component: go
+    language: go
+  - id: apache/iceberg-cpp
+    slug: iceberg-cpp
+    classify_paths: false
+    component: cpp
+    language: cpp
+  - id: apache/terraform-provider-iceberg
+    slug: terraform-provider-iceberg
+    classify_paths: false
+    component: terraform
+    language: terraform
+
+bots:
+  email:
+    - "(?i)noreply"
+    - "(?i)\\[bot\\]"
+    - "(?i)dependabot"
+    - "(?i)github-actions"
+  login:
+    - "(?i)\\[bot\\]$"
+    - "(?i)^dependabot"
+    - "(?i)^github-actions"
+    - "(?i)^renovate"
+
+metrics:
+  stale_days: 28
+  retention_days: 180
+  sustained_commits: 5
+  sustained_window_days: 365
+  release_window_days: 730
+  floors:
+    rate: 5
+    latency: 5
+    concentration: 5
+  unstable_tag: "(?i)(^|[._-])(rc\\d*|alpha|beta|snapshot|preview|pre\\d*|dev)($|[._-])"
+  recommendations:
+    stale_pr_rate: 0.4
+    reviewer_hhi: 0.5
+    unanswered_rate: 0.4
+    time_since_last_release_days: 180
+
+# Longest matching prefix or version pattern wins. A new Spark or Flink
+# directory spark/vX.Y or flink/vX.Y is classified without a config edit.
+java_modules:
+  - id: core-api-data
+    prefixes: [api/, common/, core/, data/, bom/]
+  - id: formats
+    prefixes: [parquet/, orc/, arrow/]
+  - id: spark
+    prefixes: [spark/]
+    version_pattern: '^spark/v(?P<version>\d+\.\d+)/'
+    versioned_id: "spark-{version}"
+  - id: flink
+    prefixes: [flink/]
+    version_pattern: '^flink/v(?P<version>\d+\.\d+)/'
+    versioned_id: "flink-{version}"
+  - id: kafka-connect
+    prefixes: [kafka-connect/]
+  - id: hive-mr
+    prefixes: [hive-metastore/, mr/]
+  - id: rest-openapi
+    prefixes: [open-api/]
+  - id: cloud-catalogs
+    prefixes:
+      - aws/
+      - aws-bundle/
+      - gcp/
+      - gcp-bundle/
+      - bigquery/
+      - azure/
+      - azure-bundle/
+      - aliyun/
+      - dell/
+      - snowflake/
+      - nessie/
+  - id: delta-lake
+    prefixes: [delta-lake/]
+  - id: docs-site
+    prefixes: [docs/, site/]
+    files: [README.md, CHANGELOG.md, CONTRIBUTING.md]
+  - id: release-build
+    prefixes: [dev/, .github/, gradle/, docker/, bundled-guava/]
+    files:
+      - build.gradle
+      - settings.gradle
+      - gradlew
+      - gradlew.bat
+      - gradle.properties
+  - id: specification
+    prefixes: [format/]
+  - id: examples
+    prefixes: [examples/]

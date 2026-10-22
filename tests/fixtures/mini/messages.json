@@ -1,0 +1,86 @@
+[
+  {
+    "list_name": "dev",
+    "message_id": "t1-a",
+    "thread_id": "t1",
+    "sender": "a@example.com",
+    "sent_at": "2026-09-10T00:00:00Z"
+  },
+  {
+    "list_name": "dev",
+    "message_id": "t1-b",
+    "thread_id": "t1",
+    "sender": "b@example.com",
+    "sent_at": "2026-09-10T02:00:00Z"
+  },
+  {
+    "list_name": "dev",
+    "message_id": "t2-a",
+    "thread_id": "t2",
+    "sender": "a@example.com",
+    "sent_at": "2026-09-10T00:00:00Z"
+  },
+  {
+    "list_name": "dev",
+    "message_id": "t2-b",
+    "thread_id": "t2",
+    "sender": "b@example.com",
+    "sent_at": "2026-09-10T04:00:00Z"
+  },
+  {
+    "list_name": "dev",
+    "message_id": "t3-a",
+    "thread_id": "t3",
+    "sender": "a@example.com",
+    "sent_at": "2026-09-10T00:00:00Z"
+  },
+  {
+    "list_name": "dev",
+    "message_id": "t3-b",
+    "thread_id": "t3",
+    "sender": "b@example.com",
+    "sent_at": "2026-09-10T06:00:00Z"
+  },
+  {
+    "list_name": "dev",
+    "message_id": "t4-a",
+    "thread_id": "t4",
+    "sender": "a@example.com",
+    "sent_at": "2026-09-10T00:00:00Z"
+  },
+  {
+    "list_name": "dev",
+    "message_id": "t4-b",
+    "thread_id": "t4",
+    "sender": "b@example.com",
+    "sent_at": "2026-09-10T08:00:00Z"
+  },
+  {
+    "list_name": "dev",
+    "message_id": "t5-a",
+    "thread_id": "t5",
+    "sender": "a@example.com",
+    "sent_at": "2026-09-10T00:00:00Z"
+  },
+  {
+    "list_name": "dev",
+    "message_id": "t5-b",
+    "thread_id": "t5",
+    "sender": "b@example.com",
+    "sent_at": "2026-09-10T10:00:00Z"
+  },
+  {
+    "list_name": "dev",
+    "message_id": "t6-a",
+    "thread_id": "t6",
+    "sender": "c@example.com",
+    "sent_at": "2026-09-11T00:00:00Z"
+  },
+  {
+    "list_name": "dev",
+    "message_id": "bot-mail",
+    "thread_id": "tbot",
+    "sender": null,
+    "sent_at": "2026-09-11T00:00:00Z"
+  }
+]

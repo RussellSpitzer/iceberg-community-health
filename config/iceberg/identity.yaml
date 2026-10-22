@@ -1,0 +1,4 @@
+# Exact email or login mapped to a canonical identity.
+# Keys are matched case-insensitively. Unlisted addresses stay distinct.
+# Display names are never used to merge two people.
+overrides: {}
