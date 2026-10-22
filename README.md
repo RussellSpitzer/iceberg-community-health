@@ -19,8 +19,10 @@ Open `site/output/index.html`. Machine-readable copies are `metrics.json` and
 `metrics.csv`. The same sample page is published at
 https://russellspitzer.github.io/iceberg-community-health/.
 
-Collected history is local Parquet under `data/projects/iceberg/`. That
-directory is gitignored. The site is a render of one run, not the store itself.
+Collected history is the Parquet store committed at `data/projects/iceberg/`:
+raw tables, manifests, watermarks, and the metrics snapshot for each run. The
+site is a render of that store. `site/output/` stays untracked because Pages
+rebuilds it.
 
 A bounded live check of a local Java checkout and one public GitHub pull request:
 

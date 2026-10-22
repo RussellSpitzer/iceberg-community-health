@@ -36,10 +36,10 @@ Thresholds in the dashboard are suggestions for a person to run an existing
 read-only Magpie command. Nothing in the report posts a comment, requests a
 reviewer, or publishes the page.
 
-The history behind a report is the local Parquet store under `data/`. That
-directory is not committed. GitHub Pages serves only the rendered HTML, JSON,
-and CSV. The page published from `main` is the checked-in sample fixture until
-a reviewed live dataset replaces it.
+The history behind a report is the Parquet store committed at
+`data/projects/iceberg/`. GitHub Pages serves the rendered HTML, JSON, and CSV,
+not the Parquet files. The store and the page currently hold the checked-in
+sample fixture until a reviewed live dataset replaces them.
 
 The `collect` workflow runs only when someone starts it. A nightly schedule
 stays off until a live dataset has been reviewed.
