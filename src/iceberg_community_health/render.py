@@ -214,7 +214,25 @@ body {
 .scope-switch a { color: var(--accent); text-decoration: none; }
 .scope-switch a[aria-current="page"] { color: var(--fg); font-weight: 650; text-decoration: underline; }
 .scope-label { color: var(--muted); font-size: 0.8rem; }
-.spark { width: 7.5rem; height: 2rem; color: var(--accent); display: block; margin-top: 0.35rem; }
+.spark {
+  display: grid;
+  grid-template-columns: auto 7.5rem;
+  column-gap: 0.3rem;
+  align-items: stretch;
+  width: fit-content;
+  margin: 0.35rem 0 0;
+  color: var(--accent);
+}
+.spark svg { width: 7.5rem; height: 2rem; display: block; }
+.spark-scale {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
 .delta { margin: 0.15rem 0 0; color: var(--muted); font-size: 0.9rem; }
 .term { position: relative; border-bottom: 1px dotted var(--muted); cursor: help; }
 .tip {
@@ -635,11 +653,14 @@ def _sparkline(series: list[dict]) -> str:
     height = 32
     low = min(value for _index, value in present)
     high = max(value for _index, value in present)
-    span = high - low or 1
+    span = high - low
 
     def point(index: int, value: float) -> tuple[float, float]:
         x = 4 + (index / max(len(values) - 1, 1)) * (width - 8)
-        y = 4 + (1 - (value - low) / span) * (height - 8)
+        if span == 0:
+            y = height / 2
+        else:
+            y = 4 + (1 - (value - low) / span) * (height - 8)
         return x, y
 
     segments: list[list[tuple[float, float]]] = []
@@ -663,9 +684,16 @@ def _sparkline(series: list[dict]) -> str:
         f'<circle cx="{point(index, value)[0]:.1f}" cy="{point(index, value)[1]:.1f}" r="1.6"/>'
         for index, value in present
     )
+    metric_id = str(series[0].get("metric_id") or "")
+    low_label = _format_value(metric_id, low)
+    high_label = _format_value(metric_id, high)
     return (
-        f'<svg class="spark" viewBox="0 0 {width} {height}" role="img" aria-label="Monthly trend">'
-        f"{lines}{dots}</svg>"
+        '<figure class="spark">'
+        '<span class="spark-scale" aria-hidden="true">'
+        f"<span>{_esc(high_label)}</span><span>{_esc(low_label)}</span></span>"
+        f'<svg viewBox="0 0 {width} {height}" role="img" '
+        f'aria-label="Monthly trend from {_esc(low_label)} to {_esc(high_label)}">'
+        f"{lines}{dots}</svg></figure>"
     )
 
 
@@ -722,8 +750,10 @@ def _module_breakdown(metric: dict, all_metrics: list[dict]) -> str:
 def _display(metric: dict) -> str | None:
     if metric.get("flag") == "insufficient_data" or metric.get("value") is None:
         return None
-    metric_id = metric.get("metric_id")
-    value = float(metric["value"])
+    return _format_value(str(metric.get("metric_id") or ""), float(metric["value"]))
+
+
+def _format_value(metric_id: str, value: float) -> str:
     if metric_id in _RATES:
         return f"{value * 100:.1f}%"
     if metric_id in _INDEXES:

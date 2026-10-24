@@ -270,6 +270,11 @@ def test_scope_pages_show_one_project_or_module(tmp_path):
     assert spark_cards["active_contributors"]["data-value"] == "7"
     assert "+5" in " ".join(spark.text)
     assert "svg" in {tag for tag, _attrs in spark.starts}
+    spark_html = (tmp_path / "modules" / "spark.html").read_text()
+    assert 'aria-label="Monthly trend from 2 to 7"' in spark_html
+    assert '<span class="spark-scale" aria-hidden="true"><span>7</span><span>2</span></span>' in spark_html
+    assert 'aria-label="Monthly trend from 0.400 to 0.400"' in spark_html
+    assert 'aria-label="Monthly trend from 20.0% to 23.2%"' in html
     reviewer = " ".join(spark.text).split("Reviewer concentration", 1)[1]
     assert "0.400" in reviewer
     assert "pt" not in reviewer.split("JSON", 1)[0]
