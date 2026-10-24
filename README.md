@@ -12,17 +12,18 @@ python3 -m venv .venv
 .venv/bin/iceberg-community-health run \
   --fixture tests/fixtures/mini \
   --as-of 2026-10-15T00:00:00Z \
-  --output site/output
+  --output build/sample
 ```
 
-Open `site/output/index.html`. Machine-readable copies are `metrics.json` and
-`metrics.csv`. The same sample page is published at
-https://russellspitzer.github.io/iceberg-community-health/.
+Open `build/sample/index.html`. Machine-readable copies are `metrics.json` and
+`metrics.csv`. The published dashboard is the committed render at
+`site/output/`, served from
+http://www.russellspitzer.com/iceberg-community-health/.
 
 Collected history is the Parquet store committed at `data/projects/iceberg/`:
-raw tables, manifests, watermarks, and the metrics snapshot for each run. The
-site is a render of that store. `site/output/` stays untracked because Pages
-rebuilds it.
+raw tables, manifests, watermarks, and the metrics snapshot for each run.
+Refresh `site/output/` locally from that store and commit it. GitHub Pages
+publishes those files and does not recompute the report.
 
 A bounded live check of a local Java checkout and one public GitHub pull request:
 

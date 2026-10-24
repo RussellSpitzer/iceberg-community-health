@@ -15,7 +15,7 @@ rules to it.
 From the root of `iceberg-community-health`:
 
 ```bash
-iceberg-community-health run --fixture tests/fixtures/mini --as-of 2026-10-15T00:00:00Z --output site/output
+iceberg-community-health run --fixture tests/fixtures/mini --as-of 2026-10-15T00:00:00Z --output build/sample
 ```
 
 For a bounded live read of a local checkout and one public pull request:
@@ -24,15 +24,17 @@ For a bounded live read of a local checkout and one public pull request:
 iceberg-community-health smoke --git-repo ~/repos/iceberg --limit 30
 ```
 
-Read `site/output/index.html`, `site/output/metrics.json`, and
-`site/output/metrics.csv`. Definitions are in `docs/METRICS.md`.
+Read `build/sample/index.html`, `build/sample/metrics.json`, and
+`build/sample/metrics.csv`. The published dashboard is the committed
+`site/output/` directory. Definitions are in `docs/METRICS.md`.
 
 ## Rules
 
 - Read public data only. Do not post reviews, comments, labels, or mail.
-- The Pages workflow deploys the rendered site. Do not enable the nightly
-  collect schedule. A live dataset replacing the sample is a separate human
-  action, described in `docs/LIMITATIONS.md`.
+- The Pages workflow deploys the committed `site/output/` directory. Refresh
+  that directory locally and commit it. Do not enable the nightly collect
+  schedule. A live dataset replacing the sample is a separate human action,
+  described in `docs/LIMITATIONS.md`.
 - Do not add a composite score or a sentiment metric.
 - Report withheld metrics as `insufficient_data`. Do not fill them in.
 - When `recommendations` names a follow-up, repeat that suggestion and stop.

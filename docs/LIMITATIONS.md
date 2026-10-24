@@ -44,8 +44,9 @@ read-only Magpie command. Nothing in the report posts a comment, requests a
 reviewer, or publishes the page.
 
 The history behind a report is the Parquet store committed at
-`data/projects/iceberg/`. GitHub Pages serves the rendered HTML, JSON, and CSV,
-not the Parquet files. A collect appends to that store. Pull-request rows are
+`data/projects/iceberg/`. GitHub Pages serves the rendered HTML, JSON, and CSV
+committed at `site/output/`. It does not recompute the report, and it does not
+serve the Parquet files. A collect appends to that store. Pull-request rows are
 the open pull requests plus pull requests updated on or after the start of the
 history window (October 2025 for a 12-month report collected in October 2026).
 A pull request closed before that window and never updated again is absent.

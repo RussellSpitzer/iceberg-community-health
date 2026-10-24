@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>release-build · Iceberg ecosystem health</title>
+<style>
+:root {
+  --bg: #f7f4ef;
+  --bg-raised: #fffdf9;
+  --fg: #1c1915;
+  --muted: #5e584f;
+  --line: #e2d9cc;
+  --accent: #0f6e6b;
+  --ok: #1f7a4d;
+  --ok-bg: #e5f4ec;
+  --warn: #8a5a12;
+  --warn-bg: #fbf0dc;
+  --bad: #9b2c2c;
+  --bad-bg: #f8e4e4;
+  --shadow: 0 1px 2px rgba(40, 30, 10, 0.06);
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161412;
+    --bg-raised: #211e1a;
+    --fg: #f3eee6;
+    --muted: #b3aa9e;
+    --line: #3a342c;
+    --accent: #7dccc8;
+    --ok: #8fd4ae;
+    --ok-bg: #1a3328;
+    --warn: #f0c27a;
+    --warn-bg: #332818;
+    --bad: #f0a0a0;
+    --bad-bg: #3a1e1e;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  background: var(--bg);
+  color: var(--fg);
+  line-height: 1.5;
+}
+.skip-link {
+  position: absolute;
+  left: -999px;
+  background: var(--accent);
+  color: #fff;
+  padding: 0.4rem 0.8rem;
+}
+.skip-link:focus { left: 0.5rem; top: 0.5rem; }
+.wrap { max-width: 68rem; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+.site-header h1 { margin: 0; font-size: 1.8rem; letter-spacing: -0.02em; }
+.tagline { color: var(--muted); }
+.page-intro {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.5rem;
+  margin: 0.5rem 0 1rem;
+  color: var(--muted);
+}
+.page-intro div { margin: 0; }
+.page-intro dt {
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.page-intro dd { margin: 0; color: var(--fg); }
+.site-nav {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line);
+  margin: 1rem 0 1.25rem;
+}
+.site-nav a {
+  flex: none;
+  padding: 0.45rem 0;
+  color: var(--muted);
+  font-weight: 650;
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+}
+.site-nav a:hover { color: var(--fg); border-bottom-color: var(--accent); }
+.sample, .banner {
+  background: var(--warn-bg);
+  color: var(--fg);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+}
+.source-badges { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.8rem 0 1.2rem; }
+.badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.78rem;
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.badge--partial { background: var(--warn-bg); color: var(--warn); }
+.badge--failed, .badge--bad { background: var(--bad-bg); color: var(--bad); }
+.scope-switch { display: flex; flex-wrap: wrap; gap: 0.4rem 0.8rem; align-items: baseline; margin: 0.5rem 0 0.25rem; }
+.scope-switch a { color: var(--accent); text-decoration: none; }
+.scope-switch a[aria-current="page"] { color: var(--fg); font-weight: 650; text-decoration: underline; }
+.scope-label { color: var(--muted); font-size: 0.8rem; }
+.spark {
+  display: grid;
+  grid-template-columns: auto 7.5rem;
+  column-gap: 0.3rem;
+  align-items: stretch;
+  width: fit-content;
+  margin: 0.35rem 0 0;
+  color: var(--accent);
+}
+.spark svg { width: 7.5rem; height: 2rem; display: block; }
+.spark-scale {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.delta { margin: 0.15rem 0 0; color: var(--muted); font-size: 0.9rem; }
+.term { position: relative; border-bottom: 1px dotted var(--muted); cursor: help; }
+.tip {
+  display: none;
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  top: 1.4rem;
+  width: 16rem;
+  padding: 0.5rem 0.7rem;
+  background: var(--fg);
+  color: var(--bg);
+  border-radius: var(--radius);
+  font-size: 0.8rem;
+  font-weight: 400;
+  line-height: 1.4;
+}
+.term:hover .tip, .term:focus .tip { display: block; }
+.parts { list-style: none; margin: 0.6rem 0 0; padding: 0; }
+.parts li { display: grid; grid-template-columns: 7rem 1fr auto; gap: 0.4rem; align-items: center; margin: 0.2rem 0; font-size: 0.8rem; }
+.part-bar { display: block; height: 0.4rem; background: var(--accent); border-radius: 99px; }
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.75rem;
+}
+.card {
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 0.85rem 1rem;
+}
+.card h3 { margin: 0; font-size: 0.95rem; }
+.card-value { margin: 0.35rem 0 0.15rem; font-size: 1.55rem; }
+.value--insufficient { font-size: 1rem; color: var(--warn); }
+.card-meta, .scope-note, .card-links { color: var(--muted); font-size: 0.85rem; }
+.card-links a, footer a, .site-nav a:focus { color: var(--accent); }
+section { margin: 1.6rem 0; }
+section h2 { margin-bottom: 0.6rem; font-size: 1.25rem; }
+footer { margin-top: 2rem; color: var(--muted); font-size: 0.9rem; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<div class="wrap">
+<header class="site-header">
+<h1>Iceberg ecosystem health</h1>
+<p class="tagline">Separate measurements for the Apache Iceberg project and its implementations. This page does not combine them into a score.</p>
+</header>
+<nav class="scope-switch" aria-label="Scope">
+<a href="../index.html">Ecosystem</a><span class="scope-label">Projects</span><a href="../projects/iceberg.html">iceberg</a><a href="../projects/iceberg-cpp.html">iceberg-cpp</a><a href="../projects/iceberg-go.html">iceberg-go</a><a href="../projects/iceberg-python.html">iceberg-python</a><a href="../projects/iceberg-rust.html">iceberg-rust</a><a href="../projects/terraform-provider-iceberg.html">terraform-provider-iceberg</a><span class="scope-label">Modules</span><a href="../modules/cloud-catalogs.html">cloud-catalogs</a><a href="../modules/core-api-data.html">core-api-data</a><a href="../modules/delta-lake.html">delta-lake</a><a href="../modules/docs-site.html">docs-site</a><a href="../modules/examples.html">examples</a><a href="../modules/flink.html">flink</a><a href="../modules/formats.html">formats</a><a href="../modules/hive-mr.html">hive-mr</a><a href="../modules/kafka-connect.html">kafka-connect</a><a href="../modules/release-build.html" aria-current="page">release-build</a><a href="../modules/rest-openapi.html">rest-openapi</a><a href="../modules/spark.html">spark</a><a href="../modules/specification.html">specification</a>
+</nav>
+<nav class="site-nav" aria-label="Primary">
+<a href="#contributors">Contributors</a><a href="#pull-requests">Pull requests</a><a href="#reviews">Reviews</a>
+</nav>
+
+<dl class="page-intro">
+<div><dt>Scope</dt><dd>release-build</dd></div>
+<div><dt>Collected</dt><dd>23 October 2026</dd></div>
+<div><dt>Month</dt><dd>September 2026, compared with August 2026</dd></div>
+<div><dt>Definitions</dt><dd>1.0</dd></div>
+</dl>
+
+<p class="scope-note">A change that also touches another module is counted in each module.</p>
+<div class="source-badges" aria-label="Per-source data status"><span class="badge badge--source">git: current</span><span class="badge badge--source">github: current</span><span class="badge badge--source">ponymail: current</span><span class="badge badge--source">releases: current</span><span class="badge badge--source">roster: current</span></div>
+<main id="main" data-scope-type="component" data-scope-id="release-build">
+<section id="contributors">
+<h2>Contributors</h2>
+<div class="card-grid"><article class="card" data-metric="active_contributors" data-scope="component" data-value="6"><h3><span class="term" tabindex="0">Active contributors<span class="tip" role="tooltip">People with at least one commit in the month.</span></span></h3><p class="card-value"><span class="value">6</span></p><p class="delta">-2</p><figure class="spark"><span class="spark-scale" aria-hidden="true"><span>12</span><span>5</span></span><svg viewBox="0 0 120 32" role="img" aria-label="Monthly trend from 5 to 12"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="4.0,28.0 14.2,28.0 24.4,17.7 34.5,24.6 44.7,21.1 54.9,7.4 65.1,4.0 75.3,4.0 85.5,17.7 95.6,17.7 105.8,17.7 116.0,24.6"/><circle cx="4.0" cy="28.0" r="1.6"/><circle cx="14.2" cy="28.0" r="1.6"/><circle cx="24.4" cy="17.7" r="1.6"/><circle cx="34.5" cy="24.6" r="1.6"/><circle cx="44.7" cy="21.1" r="1.6"/><circle cx="54.9" cy="7.4" r="1.6"/><circle cx="65.1" cy="4.0" r="1.6"/><circle cx="75.3" cy="4.0" r="1.6"/><circle cx="85.5" cy="17.7" r="1.6"/><circle cx="95.6" cy="17.7" r="1.6"/><circle cx="105.8" cy="17.7" r="1.6"/><circle cx="116.0" cy="24.6" r="1.6"/></svg></figure><p class="card-meta">n=6 · established</p></article><article class="card" data-metric="new_contributors" data-scope="component" data-value="1"><h3><span class="term" tabindex="0">New contributors<span class="tip" role="tooltip">People whose first in-scope commit falls in the month.</span></span></h3><p class="card-value"><span class="value">1</span></p><p class="delta">-1</p><figure class="spark"><span class="spark-scale" aria-hidden="true"><span>3</span><span>0</span></span><svg viewBox="0 0 120 32" role="img" aria-label="Monthly trend from 0 to 3"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="4.0,20.0 14.2,28.0 24.4,4.0 34.5,12.0 44.7,12.0 54.9,4.0 65.1,4.0 75.3,4.0 85.5,4.0 95.6,20.0 105.8,12.0 116.0,20.0"/><circle cx="4.0" cy="20.0" r="1.6"/><circle cx="14.2" cy="28.0" r="1.6"/><circle cx="24.4" cy="4.0" r="1.6"/><circle cx="34.5" cy="12.0" r="1.6"/><circle cx="44.7" cy="12.0" r="1.6"/><circle cx="54.9" cy="4.0" r="1.6"/><circle cx="65.1" cy="4.0" r="1.6"/><circle cx="75.3" cy="4.0" r="1.6"/><circle cx="85.5" cy="4.0" r="1.6"/><circle cx="95.6" cy="20.0" r="1.6"/><circle cx="105.8" cy="12.0" r="1.6"/><circle cx="116.0" cy="20.0" r="1.6"/></svg></figure><p class="card-meta">n=1 · established</p></article><article class="card" data-metric="sustained_contributors" data-scope="component" data-value="8"><h3><span class="term" tabindex="0">Sustained contributors<span class="tip" role="tooltip">People with at least 5 commits in the 365 days ending at the month boundary.</span></span></h3><p class="card-value"><span class="value">8</span></p><p class="delta">-1</p><figure class="spark"><span class="spark-scale" aria-hidden="true"><span>9</span><span>5</span></span><svg viewBox="0 0 120 32" role="img" aria-label="Monthly trend from 5 to 9"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="4.0,4.0 14.2,16.0 24.4,28.0 34.5,22.0 44.7,22.0 54.9,28.0 65.1,16.0 75.3,16.0 85.5,16.0 95.6,10.0 105.8,4.0 116.0,10.0"/><circle cx="4.0" cy="4.0" r="1.6"/><circle cx="14.2" cy="16.0" r="1.6"/><circle cx="24.4" cy="28.0" r="1.6"/><circle cx="34.5" cy="22.0" r="1.6"/><circle cx="44.7" cy="22.0" r="1.6"/><circle cx="54.9" cy="28.0" r="1.6"/><circle cx="65.1" cy="16.0" r="1.6"/><circle cx="75.3" cy="16.0" r="1.6"/><circle cx="85.5" cy="16.0" r="1.6"/><circle cx="95.6" cy="10.0" r="1.6"/><circle cx="105.8" cy="4.0" r="1.6"/><circle cx="116.0" cy="10.0" r="1.6"/></svg></figure><p class="card-meta">n=8 · established</p></article><article class="card" data-metric="first_to_second_retention" data-scope="component" data-value="0.374233"><h3><span class="term" tabindex="0">First-to-second retention<span class="tip" role="tooltip">Share of people whose second commit arrived within 180 days of their first. The cohort is people whose first commit was at least 180 days ago.</span></span></h3><p class="card-value"><span class="value">37.4%</span></p><p class="delta">-0.1 pt</p><figure class="spark"><span class="spark-scale" aria-hidden="true"><span>41.1%</span><span>37.4%</span></span><svg viewBox="0 0 120 32" role="img" aria-label="Monthly trend from 37.4% to 41.1%"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="4.0,12.3 14.2,4.0 24.4,5.9 34.5,14.9 44.7,18.3 54.9,19.0 65.1,19.0 75.3,19.0 85.5,23.9 95.6,27.0 105.8,27.5 116.0,28.0"/><circle cx="4.0" cy="12.3" r="1.6"/><circle cx="14.2" cy="4.0" r="1.6"/><circle cx="24.4" cy="5.9" r="1.6"/><circle cx="34.5" cy="14.9" r="1.6"/><circle cx="44.7" cy="18.3" r="1.6"/><circle cx="54.9" cy="19.0" r="1.6"/><circle cx="65.1" cy="19.0" r="1.6"/><circle cx="75.3" cy="19.0" r="1.6"/><circle cx="85.5" cy="23.9" r="1.6"/><circle cx="95.6" cy="27.0" r="1.6"/><circle cx="105.8" cy="27.5" r="1.6"/><circle cx="116.0" cy="28.0" r="1.6"/></svg></figure><p class="card-meta">n=163 · established</p></article><article class="card" data-metric="contributor_hhi" data-scope="component" data-value="0.259259"><h3><span class="term" tabindex="0">Contributor concentration<span class="tip" role="tooltip">Concentration of commits among people who committed this month. 1/N means an even split. 1 means one person made every commit.</span></span></h3><p class="card-value"><span class="value">0.259</span></p><p class="delta">+0.017</p><figure class="spark"><span class="spark-scale" aria-hidden="true"><span>0.316</span><span>0.100</span></span><svg viewBox="0 0 120 32" role="img" aria-label="Monthly trend from 0.100 to 0.316"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="4.0,16.9 14.2,14.4 24.4,21.4 34.5,13.0 44.7,17.5 54.9,4.0 65.1,28.0 75.3,21.5 85.5,16.5 95.6,19.2 105.8,12.2 116.0,10.3"/><circle cx="4.0" cy="16.9" r="1.6"/><circle cx="14.2" cy="14.4" r="1.6"/><circle cx="24.4" cy="21.4" r="1.6"/><circle cx="34.5" cy="13.0" r="1.6"/><circle cx="44.7" cy="17.5" r="1.6"/><circle cx="54.9" cy="4.0" r="1.6"/><circle cx="65.1" cy="28.0" r="1.6"/><circle cx="75.3" cy="21.5" r="1.6"/><circle cx="85.5" cy="16.5" r="1.6"/><circle cx="95.6" cy="19.2" r="1.6"/><circle cx="105.8" cy="12.2" r="1.6"/><circle cx="116.0" cy="10.3" r="1.6"/></svg></figure><p class="card-meta">n=6 · established</p></article></div>
+</section>
+<section id="pull-requests">
+<h2>Pull requests</h2>
+<div class="card-grid"><article class="card" data-metric="pr_inflow" data-scope="component" data-value="53"><h3><span class="term" tabindex="0">Pull requests opened<span class="tip" role="tooltip">Pull requests opened in the month. Drafts are excluded.</span></span></h3><p class="card-value"><span class="value">53</span></p><p class="delta">-9</p><figure class="spark"><span class="spark-scale" aria-hidden="true"><span>72</span><span>29</span></span><svg viewBox="0 0 120 32" role="img" aria-label="Monthly trend from 29 to 72"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="4.0,25.8 14.2,20.7 24.4,28.0 34.5,23.0 44.7,16.8 54.9,7.9 65.1,12.4 75.3,4.0 85.5,12.4 95.6,11.3 105.8,9.6 116.0,14.6"/><circle cx="4.0" cy="25.8" r="1.6"/><circle cx="14.2" cy="20.7" r="1.6"/><circle cx="24.4" cy="28.0" r="1.6"/><circle cx="34.5" cy="23.0" r="1.6"/><circle cx="44.7" cy="16.8" r="1.6"/><circle cx="54.9" cy="7.9" r="1.6"/><circle cx="65.1" cy="12.4" r="1.6"/><circle cx="75.3" cy="4.0" r="1.6"/><circle cx="85.5" cy="12.4" r="1.6"/><circle cx="95.6" cy="11.3" r="1.6"/><circle cx="105.8" cy="9.6" r="1.6"/><circle cx="116.0" cy="14.6" r="1.6"/></svg></figure><p class="card-meta">n=53 · established</p></article><article class="card" data-metric="pr_closures" data-scope="component" data-value="57"><h3><span class="term" tabindex="0">Pull requests closed<span class="tip" role="tooltip">Pull requests closed in the month, including merges. Drafts are excluded.</span></span></h3><p class="card-value"><span class="value">57</span></p><p class="delta">-11</p><figure class="spark"><span class="spark-scale" aria-hidden="true"><span>68</span><span>24</span></span><svg viewBox="0 0 120 32" role="img" aria-label="Monthly trend from 24 to 68"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="4.0,28.0 14.2,16.5 24.4,20.9 34.5,19.8 44.7,17.1 54.9,8.9 65.1,13.3 75.3,5.6 85.5,8.4 95.6,8.9 105.8,4.0 116.0,10.0"/><circle cx="4.0" cy="28.0" r="1.6"/><circle cx="14.2" cy="16.5" r="1.6"/><circle cx="24.4" cy="20.9" r="1.6"/><circle cx="34.5" cy="19.8" r="1.6"/><circle cx="44.7" cy="17.1" r="1.6"/><circle cx="54.9" cy="8.9" r="1.6"/><circle cx="65.1" cy="13.3" r="1.6"/><circle cx="75.3" cy="5.6" r="1.6"/><circle cx="85.5" cy="8.4" r="1.6"/><circle cx="95.6" cy="8.9" r="1.6"/><circle cx="105.8" cy="4.0" r="1.6"/><circle cx="116.0" cy="10.0" r="1.6"/></svg></figure><p class="card-meta">n=57 · established</p></article><article class="card" data-metric="pr_closed_by_stale_bot" data-scope="component" data-value="5"><h3><span class="term" tabindex="0">Closed by the stale bot<span class="tip" role="tooltip">Unmerged pull requests closed by the stale-bot account, github-actions.</span></span></h3><p class="card-value"><span class="value">5</span></p><p class="delta">+0</p><figure class="spark"><span class="spark-scale" aria-hidden="true"><span>9</span><span>0</span></span><svg viewBox="0 0 120 32" role="img" aria-label="Monthly trend from 0 to 9"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="4.0,28.0 14.2,14.7 24.4,14.7 34.5,20.0 44.7,28.0 54.9,28.0 65.1,22.7 75.3,12.0 85.5,4.0 95.6,14.7 105.8,14.7 116.0,14.7"/><circle cx="4.0" cy="28.0" r="1.6"/><circle cx="14.2" cy="14.7" r="1.6"/><circle cx="24.4" cy="14.7" r="1.6"/><circle cx="34.5" cy="20.0" r="1.6"/><circle cx="44.7" cy="28.0" r="1.6"/><circle cx="54.9" cy="28.0" r="1.6"/><circle cx="65.1" cy="22.7" r="1.6"/><circle cx="75.3" cy="12.0" r="1.6"/><circle cx="85.5" cy="4.0" r="1.6"/><circle cx="95.6" cy="14.7" r="1.6"/><circle cx="105.8" cy="14.7" r="1.6"/><circle cx="116.0" cy="14.7" r="1.6"/></svg></figure><p class="card-meta">n=5 · established</p></article><article class="card" data-metric="pr_closed_by_committer" data-scope="component" data-value="52"><h3><span class="term" tabindex="0">Closed by a committer<span class="tip" role="tooltip">Pull requests merged, or closed without a merge by a person rather than a bot.</span></span></h3><p class="card-value"><span class="value">52</span></p><p class="delta">-11</p><figure class="spark"><span class="spark-scale" aria-hidden="true"><span>63</span><span>24</span></span><svg viewBox="0 0 120 32" role="img" aria-label="Monthly trend from 24 to 63"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="4.0,28.0 14.2,18.2 24.4,23.1 34.5,20.6 44.7,15.7 54.9,6.5 65.1,12.6 75.3,6.5 85.5,11.4 95.6,9.5 105.8,4.0 116.0,10.8"/><circle cx="4.0" cy="28.0" r="1.6"/><circle cx="14.2" cy="18.2" r="1.6"/><circle cx="24.4" cy="23.1" r="1.6"/><circle cx="34.5" cy="20.6" r="1.6"/><circle cx="44.7" cy="15.7" r="1.6"/><circle cx="54.9" cy="6.5" r="1.6"/><circle cx="65.1" cy="12.6" r="1.6"/><circle cx="75.3" cy="6.5" r="1.6"/><circle cx="85.5" cy="11.4" r="1.6"/><circle cx="95.6" cy="9.5" r="1.6"/><circle cx="105.8" cy="4.0" r="1.6"/><circle cx="116.0" cy="10.8" r="1.6"/></svg></figure><p class="card-meta">n=52 · established</p></article><article class="card" data-metric="pr_backlog" data-scope="component" data-value="24"><h3><span class="term" tabindex="0">Open pull requests<span class="tip" role="tooltip">Pull requests still open at the end of the month. Drafts are excluded.</span></span></h3><p class="card-value"><span class="value">24</span></p><p class="delta">-4</p><figure class="spark"><span class="spark-scale" aria-hidden="true"><span>37</span><span>13</span></span><svg viewBox="0 0 120 32" role="img" aria-label="Monthly trend from 13 to 37"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="4.0,16.0 14.2,19.0 24.4,27.0 34.5,28.0 44.7,23.0 54.9,17.0 65.1,11.0 75.3,4.0 85.5,7.0 95.6,7.0 105.8,13.0 116.0,17.0"/><circle cx="4.0" cy="16.0" r="1.6"/><circle cx="14.2" cy="19.0" r="1.6"/><circle cx="24.4" cy="27.0" r="1.6"/><circle cx="34.5" cy="28.0" r="1.6"/><circle cx="44.7" cy="23.0" r="1.6"/><circle cx="54.9" cy="17.0" r="1.6"/><circle cx="65.1" cy="11.0" r="1.6"/><circle cx="75.3" cy="4.0" r="1.6"/><circle cx="85.5" cy="7.0" r="1.6"/><circle cx="95.6" cy="7.0" r="1.6"/><circle cx="105.8" cy="13.0" r="1.6"/><circle cx="116.0" cy="17.0" r="1.6"/></svg></figure><p class="card-meta">n=24 · established</p></article><article class="card" data-metric="pr_age_days" data-scope="component" data-value="128.776308"><h3><span class="term" tabindex="0">Median open age<span class="tip" role="tooltip">Median age, in days, of pull requests open at the end of the month.</span></span></h3><p class="card-value"><span class="value">128.8 days</span></p><p class="delta">+30.0 days</p><figure class="spark"><span class="spark-scale" aria-hidden="true"><span>128.8 days</span><span>11.8 days</span></span><svg viewBox="0 0 120 32" role="img" aria-label="Monthly trend from 11.8 days to 128.8 days"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="4.0,24.2 14.2,21.8 24.4,16.7 34.5,25.4 44.7,28.0 54.9,23.6 65.1,23.7 75.3,25.0 85.5,21.0 95.6,16.6 105.8,10.2 116.0,4.0"/><circle cx="4.0" cy="24.2" r="1.6"/><circle cx="14.2" cy="21.8" r="1.6"/><circle cx="24.4" cy="16.7" r="1.6"/><circle cx="34.5" cy="25.4" r="1.6"/><circle cx="44.7" cy="28.0" r="1.6"/><circle cx="54.9" cy="23.6" r="1.6"/><circle cx="65.1" cy="23.7" r="1.6"/><circle cx="75.3" cy="25.0" r="1.6"/><circle cx="85.5" cy="21.0" r="1.6"/><circle cx="95.6" cy="16.6" r="1.6"/><circle cx="105.8" cy="10.2" r="1.6"/><circle cx="116.0" cy="4.0" r="1.6"/></svg></figure><p class="card-meta">n=24 · established</p></article><article class="card" data-metric="stale_pr_rate" data-scope="component" data-value="0.708333"><h3><span class="term" tabindex="0">Stale pull requests<span class="tip" role="tooltip">Share of open pull requests that have been open for at least 28 days.</span></span></h3><p class="card-value"><span class="value">70.8%</span></p><p class="delta">-7.7 pt</p><figure class="spark"><span class="spark-scale" aria-hidden="true"><span>78.6%</span><span>38.9%</span></span><svg viewBox="0 0 120 32" role="img" aria-label="Monthly trend from 38.9% to 78.6%"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="4.0,17.7 14.2,10.3 24.4,4.0 34.5,23.6 44.7,28.0 54.9,16.2 65.1,17.2 75.3,22.1 85.5,8.8 95.6,5.3 105.8,4.0 116.0,8.7"/><circle cx="4.0" cy="17.7" r="1.6"/><circle cx="14.2" cy="10.3" r="1.6"/><circle cx="24.4" cy="4.0" r="1.6"/><circle cx="34.5" cy="23.6" r="1.6"/><circle cx="44.7" cy="28.0" r="1.6"/><circle cx="54.9" cy="16.2" r="1.6"/><circle cx="65.1" cy="17.2" r="1.6"/><circle cx="75.3" cy="22.1" r="1.6"/><circle cx="85.5" cy="8.8" r="1.6"/><circle cx="95.6" cy="5.3" r="1.6"/><circle cx="105.8" cy="4.0" r="1.6"/><circle cx="116.0" cy="8.7" r="1.6"/></svg></figure><p class="card-meta">n=24 · established</p></article><article class="card" data-metric="merge_latency_hours" data-scope="component" data-value="1.989167"><h3><span class="term" tabindex="0">Median time to merge<span class="tip" role="tooltip">Median hours from open to merge for pull requests merged in the month.</span></span></h3><p class="card-value"><span class="value">2.0 hours</span></p><p class="delta">-5.4 hours</p><figure class="spark"><span class="spark-scale" aria-hidden="true"><span>12.6 hours</span><span>2.0 hours</span></span><svg viewBox="0 0 120 32" role="img" aria-label="Monthly trend from 2.0 hours to 12.6 hours"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="4.0,26.7 14.2,25.4 24.4,24.5 34.5,4.0 44.7,24.9 54.9,26.4 65.1,27.2 75.3,7.2 85.5,22.9 95.6,26.9 105.8,15.7 116.0,28.0"/><circle cx="4.0" cy="26.7" r="1.6"/><circle cx="14.2" cy="25.4" r="1.6"/><circle cx="24.4" cy="24.5" r="1.6"/><circle cx="34.5" cy="4.0" r="1.6"/><circle cx="44.7" cy="24.9" r="1.6"/><circle cx="54.9" cy="26.4" r="1.6"/><circle cx="65.1" cy="27.2" r="1.6"/><circle cx="75.3" cy="7.2" r="1.6"/><circle cx="85.5" cy="22.9" r="1.6"/><circle cx="95.6" cy="26.9" r="1.6"/><circle cx="105.8" cy="15.7" r="1.6"/><circle cx="116.0" cy="28.0" r="1.6"/></svg></figure><p class="card-meta">n=43 · established</p></article></div>
+</section>
+<section id="reviews">
+<h2>Reviews</h2>
+<div class="card-grid"><article class="card" data-metric="first_review_hours" data-scope="component" data-value="1.062222"><h3><span class="term" tabindex="0">Median time to first review<span class="tip" role="tooltip">Median hours from open to the first review by someone other than the author. Pull requests with no such review are left out of the median.</span></span></h3><p class="card-value"><span class="value">1.1 hours</span></p><p class="delta">-4.4 hours</p><figure class="spark"><span class="spark-scale" aria-hidden="true"><span>5.4 hours</span><span>0.5 hours</span></span><svg viewBox="0 0 120 32" role="img" aria-label="Monthly trend from 0.5 hours to 5.4 hours"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="4.0,21.7 14.2,25.9 24.4,28.0 34.5,26.5 44.7,27.7 54.9,24.8 65.1,26.7 75.3,23.7 85.5,27.8 95.6,20.4 105.8,4.0 116.0,25.2"/><circle cx="4.0" cy="21.7" r="1.6"/><circle cx="14.2" cy="25.9" r="1.6"/><circle cx="24.4" cy="28.0" r="1.6"/><circle cx="34.5" cy="26.5" r="1.6"/><circle cx="44.7" cy="27.7" r="1.6"/><circle cx="54.9" cy="24.8" r="1.6"/><circle cx="65.1" cy="26.7" r="1.6"/><circle cx="75.3" cy="23.7" r="1.6"/><circle cx="85.5" cy="27.8" r="1.6"/><circle cx="95.6" cy="20.4" r="1.6"/><circle cx="105.8" cy="4.0" r="1.6"/><circle cx="116.0" cy="25.2" r="1.6"/></svg></figure><p class="card-meta">n=47 · established</p></article><article class="card" data-metric="reviewer_hhi" data-scope="component" data-value="0.177573"><h3><span class="term" tabindex="0">Reviewer concentration<span class="tip" role="tooltip">Concentration of review submissions among reviewers this month, excluding the pull request author.</span></span></h3><p class="card-value"><span class="value">0.178</span></p><p class="delta">-0.014</p><figure class="spark"><span class="spark-scale" aria-hidden="true"><span>0.226</span><span>0.102</span></span><svg viewBox="0 0 120 32" role="img" aria-label="Monthly trend from 0.102 to 0.226"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="4.0,4.0 14.2,5.7 24.4,20.2 34.5,17.9 44.7,11.6 54.9,25.1 65.1,28.0 75.3,21.0 85.5,25.1 95.6,19.9 105.8,10.8 116.0,13.4"/><circle cx="4.0" cy="4.0" r="1.6"/><circle cx="14.2" cy="5.7" r="1.6"/><circle cx="24.4" cy="20.2" r="1.6"/><circle cx="34.5" cy="17.9" r="1.6"/><circle cx="44.7" cy="11.6" r="1.6"/><circle cx="54.9" cy="25.1" r="1.6"/><circle cx="65.1" cy="28.0" r="1.6"/><circle cx="75.3" cy="21.0" r="1.6"/><circle cx="85.5" cy="25.1" r="1.6"/><circle cx="95.6" cy="19.9" r="1.6"/><circle cx="105.8" cy="10.8" r="1.6"/><circle cx="116.0" cy="13.4" r="1.6"/></svg></figure><p class="card-meta">n=14 · established</p></article><article class="card" data-metric="review_load" data-scope="component" data-value="5.857143"><h3><span class="term" tabindex="0">Reviews per reviewer<span class="tip" role="tooltip">Mean review submissions per reviewer in the month.</span></span></h3><p class="card-value"><span class="value">5.9</span></p><p class="delta">-1.5</p><figure class="spark"><span class="spark-scale" aria-hidden="true"><span>9.4</span><span>4.8</span></span><svg viewBox="0 0 120 32" role="img" aria-label="Monthly trend from 4.8 to 9.4"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="4.0,25.7 14.2,4.0 24.4,28.0 34.5,22.9 44.7,11.5 54.9,16.8 65.1,17.7 75.3,20.9 85.5,23.9 95.6,21.6 105.8,14.3 116.0,22.3"/><circle cx="4.0" cy="25.7" r="1.6"/><circle cx="14.2" cy="4.0" r="1.6"/><circle cx="24.4" cy="28.0" r="1.6"/><circle cx="34.5" cy="22.9" r="1.6"/><circle cx="44.7" cy="11.5" r="1.6"/><circle cx="54.9" cy="16.8" r="1.6"/><circle cx="65.1" cy="17.7" r="1.6"/><circle cx="75.3" cy="20.9" r="1.6"/><circle cx="85.5" cy="23.9" r="1.6"/><circle cx="95.6" cy="21.6" r="1.6"/><circle cx="105.8" cy="14.3" r="1.6"/><circle cx="116.0" cy="22.3" r="1.6"/></svg></figure><p class="card-meta">n=82 · established</p></article></div>
+</section>
+
+
+</main>
+<footer class="site-footer">
+<p class="card-links"><a href="../metrics.json">JSON</a> · <a href="../metrics.csv">CSV</a></p>
+<p>Run <code>0911ba642bf2</code></p>
+</footer>
+</div>
+</body>
+</html>
