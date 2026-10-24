@@ -17,6 +17,7 @@ from iceberg_community_health.collectors import (
     parse_pulls,
     parse_reviews,
     parse_roster,
+    rows_from_pull_nodes,
     with_files,
 )
 from iceberg_community_health.components import classify_change, classify_path, load_rules
@@ -31,7 +32,8 @@ from iceberg_community_health.pipeline import (
 )
 from iceberg_community_health.render import write_report
 from iceberg_community_health.storage import Store
-from iceberg_community_health.timeutil import days_between
+from iceberg_community_health.live import apache_remote_name
+from iceberg_community_health.timeutil import completed_month, days_between, month_ends
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests" / "fixtures" / "mini"
@@ -51,6 +53,10 @@ def _metric(report, metric_id, scope_type="ecosystem", scope_id="iceberg"):
         and item["scope_type"] == scope_type
         and item["scope_id"] == scope_id
     ]
+    assert matches
+    latest = max(matches, key=lambda item: item.get("month") or item.get("window_end") or "")
+    stamp = latest.get("month") or latest.get("window_end")
+    matches = [item for item in matches if (item.get("month") or item.get("window_end")) == stamp]
     assert len(matches) == 1
     return matches[0]
 
@@ -59,10 +65,11 @@ def test_java_modules_follow_the_longest_path_rule(project):
     rules = load_rules(project)
     assert classify_path("api/src/main/java/Foo.java", rules) == "core-api-data"
     assert classify_path("parquet/src/main/java/Foo.java", rules) == "formats"
-    assert classify_path("spark/v3.5/spark/src/main/java/Foo.java", rules) == "spark-3.5"
-    assert classify_path("spark/v9.9/spark/src/main/java/Foo.java", rules) == "spark-9.9"
+    assert classify_path("spark/v3.5/spark/src/main/java/Foo.java", rules) == "spark"
+    assert classify_path("spark/v9.9/spark/src/main/java/Foo.java", rules) == "spark"
     assert classify_path("spark/README.md", rules) == "spark"
-    assert classify_path("flink/v2.3/flink/src/main/java/Foo.java", rules) == "flink-2.3"
+    assert classify_path("flink/v2.3/flink/src/main/java/Foo.java", rules) == "flink"
+    assert classify_path("flink/v1.20/flink/src/main/java/Foo.java", rules) == "flink"
     assert classify_path("open-api/rest-catalog-open-api.yaml", rules) == "rest-openapi"
     assert classify_path("format/spec.md", rules) == "specification"
     assert classify_path("aws/src/main/java/Foo.java", rules) == "cloud-catalogs"
@@ -76,13 +83,19 @@ def test_java_modules_follow_the_longest_path_rule(project):
         rules,
     )
     assert change[0] == "core-api-data"
-    assert "spark-4.0" in change
+    assert "spark" in change
     assert change[-1] == "cross-cutting"
+    same_family = classify_change(
+        ["spark/v3.5/spark/src/A.java", "spark/v4.1/spark/src/B.java"],
+        rules,
+    )
+    assert same_family == ["spark"]
 
 
 def test_identities_are_exact_and_bots_are_excluded(project):
     assert canonical_email("Person <A@Example.com>", project) == "a@example.com"
     assert canonical_email("dependabot[bot]@users.noreply.github.com", project) is None
+    assert canonical_email("123+alice@users.noreply.github.com", project) == "123+alice@users.noreply.github.com"
     assert canonical_login("Renovate[bot]", project) is None
     overridden = dict(project)
     overridden["identity_overrides"] = {"alias@example.com": "a@example.com"}
@@ -104,7 +117,7 @@ def test_parsers_normalize_public_payloads(project):
     rows = parse_git_log(text, "apache/iceberg", project)
     assert [(row["sha"], row["component"], row["identity_key"]) for row in rows] == [
         ("abc", "core-api-data", "author@example.com"),
-        ("abc", "spark-3.5", "author@example.com"),
+        ("abc", "spark", "author@example.com"),
         ("def", "docs-site", None),
     ]
     pulls = parse_pulls(
@@ -171,6 +184,33 @@ reply
         "apache/iceberg",
     )
     assert [row["tag"] for row in archive] == ["1.5.0"]
+    pulls, reviews = rows_from_pull_nodes(
+        [
+            {
+                "number": 9,
+                "updatedAt": "2026-09-02T00:00:00Z",
+                "author": {"login": "Author"},
+                "createdAt": "2026-09-01T00:00:00Z",
+                "closedAt": None,
+                "mergedAt": None,
+                "isDraft": False,
+                "files": {"nodes": [{"path": "pyiceberg/table.py"}]},
+                "reviews": {
+                    "nodes": [
+                        {
+                            "author": {"login": "Reviewer"},
+                            "submittedAt": "2026-09-01T02:00:00Z",
+                            "state": "APPROVED",
+                        }
+                    ]
+                },
+            }
+        ],
+        "apache/iceberg-python",
+        project,
+    )
+    assert pulls[0]["component"] == "python"
+    assert reviews[0]["reviewer"] == "reviewer"
 
 
 def test_fixture_metrics(project):
@@ -288,11 +328,106 @@ def test_cross_cutting_commit_is_counted_in_each_family(project):
             "identity_key": "p0@example.com",
             "committed_at": "2026-09-02T00:00:00Z",
             "path": "spark/v3.5/spark/src/Bar.java",
-            "component": "spark-3.5",
+            "component": "spark",
         }
     )
     report = compute({"commits": commits}, project, AS_OF)
     assert _metric(report, "active_contributors", "component", "core-api-data")["value"] == 5
-    assert _metric(report, "active_contributors", "component", "spark-3.5")["value"] == 1
+    assert _metric(report, "active_contributors", "component", "spark")["value"] == 1
     assert _metric(report, "active_contributors", "component", "cross-cutting")["value"] == 1
     assert _metric(report, "active_contributors", "ecosystem")["value"] == 5
+
+
+def test_stored_spark_version_counts_as_spark(project):
+    report = compute(
+        {
+            "commits": [
+                {
+                    "repo": "apache/iceberg",
+                    "sha": "s",
+                    "identity_key": "a@example.com",
+                    "committed_at": "2026-09-02T00:00:00Z",
+                    "component": "spark-4.1",
+                }
+            ]
+        },
+        project,
+        AS_OF,
+    )
+    assert _metric(report, "active_contributors", "component", "spark")["value"] == 1
+    assert all(item["scope_id"] != "spark-4.1" for item in report["metrics"])
+
+
+def test_apache_history_comes_from_the_apache_remote():
+    lines = [
+        "origin\tgit@gh_oss:RussellSpitzer/iceberg.git (fetch)",
+        "origin\tgit@gh_oss:RussellSpitzer/iceberg.git (push)",
+        "upstream\tgit@gh_oss:apache/iceberg.git (fetch)",
+        "upstream\tgit@gh_oss:apache/iceberg.git (push)",
+        "other\tgit@gh_oss:apache/iceberg-python.git (fetch)",
+    ]
+    assert apache_remote_name(lines, "apache/iceberg") == "upstream"
+    assert apache_remote_name(lines[:2], "apache/iceberg") is None
+    assert (
+        apache_remote_name(
+            ["origin\thttps://github.com/apache/iceberg-python.git (fetch)"],
+            "apache/iceberg-python",
+        )
+        == "origin"
+    )
+
+
+def _closed_pull(number, closed_by, merged=False):
+    return {
+        "repo": "apache/iceberg",
+        "number": number,
+        "author": "author",
+        "created_at": "2026-09-02T00:00:00Z",
+        "closed_at": "2026-09-10T00:00:00Z",
+        "merged_at": "2026-09-10T00:00:00Z" if merged else None,
+        "draft": "false",
+        "component": "core-api-data",
+        "closed_by": closed_by,
+    }
+
+
+def test_stale_bot_closures_are_separate_from_committer_closures(project):
+    report = compute(
+        {
+            "prs": [
+                _closed_pull("1", "github-actions[bot]"),
+                _closed_pull("2", "somecommitter"),
+                _closed_pull("3", "somecommitter", merged=True),
+                _closed_pull("4", "dependabot[bot]"),
+            ]
+        },
+        project,
+        AS_OF,
+    )
+    assert _metric(report, "pr_closures")["value"] == 4
+    assert _metric(report, "pr_closed_by_stale_bot")["value"] == 1
+    assert _metric(report, "pr_closed_by_committer")["value"] == 2
+
+
+def test_month_ends_cover_twelve_completed_months():
+    ends = month_ends("2026-10-22T22:15:00Z", 12)
+    assert len(ends) == 12
+    assert completed_month(ends[0]) == ("2025-10-01T00:00:00Z", "2025-11-01T00:00:00Z")
+    assert completed_month(ends[-1]) == ("2026-09-01T00:00:00Z", "2026-10-01T00:00:00Z")
+
+
+def test_report_keeps_each_completed_month(tmp_path, project):
+    tuned = {**project, "metrics": {**project["metrics"], "history_months": 2}}
+    store = Store(tmp_path, "iceberg")
+    records = annotate(load_fixture(FIXTURE), tuned)
+    manifest = store_records(store, records, "run1", AS_OF)
+    report = report_from_store(store, tuned, AS_OF, manifest)
+    months = {
+        item["month"]
+        for item in report["metrics"]
+        if item["metric_id"] == "active_contributors" and item["scope_type"] == "ecosystem"
+    }
+    assert months == {"2026-08", "2026-09"}
+    assert report["as_of"] == AS_OF
+    assert report["window_start"] == "2026-09-01T00:00:00Z"
+    assert _metric(report, "active_contributors")["month"] == "2026-09"

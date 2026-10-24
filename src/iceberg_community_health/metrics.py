@@ -26,6 +26,7 @@ _PR_COLUMNS = (
     "merged_at",
     "draft",
     "component",
+    "closed_by",
 )
 _REVIEW_COLUMNS = ("repo", "number", "reviewer", "submitted_at", "component")
 
@@ -42,7 +43,9 @@ def compute(records: dict, project: dict, as_of: str, sources: dict | None = Non
     """Compute the MVP metric set. Rates are fractions. No composite score."""
     as_of = norm_ts(as_of)
     month_start, month_end = completed_month(as_of)
-    settings = project["metrics"]
+    settings = dict(project["metrics"])
+    if project.get("stale_closers"):
+        settings["stale_closers"] = project["stale_closers"]
     floors = settings["floors"]
     definition = project["definition_version"]
 
@@ -253,6 +256,26 @@ def _pull_metrics(
     return [
         _count("pr_inflow", scope_type, scope_id, month_start, month_end, len(inflow), definition, tier),
         _count("pr_closures", scope_type, scope_id, month_start, month_end, len(closed), definition, tier),
+        _count(
+            "pr_closed_by_stale_bot",
+            scope_type,
+            scope_id,
+            month_start,
+            month_end,
+            _closure_count(closed, settings, "stale_bot"),
+            definition,
+            tier,
+        ),
+        _count(
+            "pr_closed_by_committer",
+            scope_type,
+            scope_id,
+            month_start,
+            month_end,
+            _closure_count(closed, settings, "committer"),
+            definition,
+            tier,
+        ),
         _count("pr_backlog", scope_type, scope_id, as_of, as_of, len(open_now), definition, tier),
         _sample(
             "pr_age_days",
@@ -519,7 +542,8 @@ def _retention(connection, scope_type, scope_id, as_of, retention_days, floor):
 def _pull_facts(connection, scope_type, scope_id):
     rows = connection.execute(
         f"""
-        SELECT repo, number, MIN(author), MIN(created_at), MIN(closed_at), MIN(merged_at)
+        SELECT repo, number, MIN(author), MIN(created_at), MIN(closed_at), MIN(merged_at),
+               MIN(closed_by)
         FROM prs
         WHERE draft IS DISTINCT FROM 'true' AND {_SCOPE_SQL}
         GROUP BY repo, number
@@ -534,8 +558,9 @@ def _pull_facts(connection, scope_type, scope_id):
             "created_at": created_at,
             "closed_at": closed_at,
             "merged_at": merged_at,
+            "closed_by": closed_by,
         }
-        for repo, number, author, created_at, closed_at, merged_at in rows
+        for repo, number, author, created_at, closed_at, merged_at, closed_by in rows
     ]
 
 
@@ -691,8 +716,37 @@ def _clean_commit(row: dict) -> dict:
         "sha": row.get("sha"),
         "identity_key": row.get("identity_key") or None,
         "committed_at": norm_ts(row.get("committed_at")),
-        "component": row.get("component") or "",
+        "component": _family(row.get("component")),
     }
+
+
+def _closure_count(closed: list[dict], settings: dict, bucket: str) -> int:
+    names = {name.lower() for name in settings.get("stale_closers") or ["github-actions[bot]"]}
+    return sum(1 for row in closed if _closure_bucket(row, names) == bucket)
+
+
+def _closure_bucket(row: dict, stale_names: set[str]) -> str | None:
+    """A merge is a committer close. An unmerged close follows the account that closed it."""
+    if row.get("merged_at"):
+        return "committer"
+    closer = str(row.get("closed_by") or "").strip().lower()
+    if not closer:
+        return None
+    if closer in stale_names:
+        return "stale_bot"
+    if closer.endswith("[bot]"):
+        return None
+    return "committer"
+
+
+def _family(component: object) -> str:
+    """Roll a stored Spark or Flink version label up to its family."""
+    name = "" if component is None else str(component)
+    if name.startswith("spark-"):
+        return "spark"
+    if name.startswith("flink-"):
+        return "flink"
+    return name
 
 
 def _clean_pull(row: dict) -> dict:
@@ -705,7 +759,8 @@ def _clean_pull(row: dict) -> dict:
         "closed_at": norm_ts(row.get("closed_at")),
         "merged_at": norm_ts(row.get("merged_at")),
         "draft": "true" if draft in (True, "true") else "false",
-        "component": row.get("component") or "",
+        "component": _family(row.get("component")),
+        "closed_by": (row.get("closed_by") or None),
     }
 
 
@@ -767,7 +822,7 @@ def _downgrade(tier: str, sources: dict | None, source_id: str) -> str:
     if not sources:
         return tier
     status = (sources.get(source_id) or {}).get("status")
-    if status == "failed":
+    if status in {"failed", "partial"}:
         return "proxy"
     return tier
 

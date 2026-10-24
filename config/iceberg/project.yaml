@@ -46,15 +46,21 @@ repositories:
 
 bots:
   email:
-    - "(?i)noreply"
     - "(?i)\\[bot\\]"
     - "(?i)dependabot"
     - "(?i)github-actions"
+    - "(?i)notifications@github\\.com"
   login:
     - "(?i)\\[bot\\]$"
     - "(?i)^dependabot"
     - "(?i)^github-actions"
     - "(?i)^renovate"
+
+# Accounts that close a pull request for the stale workflow. A merge is a
+# committer close even when one of these accounts is the merger.
+stale_closers:
+  - github-actions[bot]
+  - github-actions
 
 metrics:
   stale_days: 28
@@ -62,6 +68,7 @@ metrics:
   sustained_commits: 5
   sustained_window_days: 365
   release_window_days: 730
+  history_months: 12
   floors:
     rate: 5
     latency: 5
@@ -73,8 +80,8 @@ metrics:
     unanswered_rate: 0.4
     time_since_last_release_days: 180
 
-# Longest matching prefix or version pattern wins. A new Spark or Flink
-# directory spark/vX.Y or flink/vX.Y is classified without a config edit.
+# Longest matching prefix wins. Every spark/vX.Y and flink/vX.Y path shares
+# the spark or flink family, including versions added later.
 java_modules:
   - id: core-api-data
     prefixes: [api/, common/, core/, data/, bom/]
@@ -82,12 +89,8 @@ java_modules:
     prefixes: [parquet/, orc/, arrow/]
   - id: spark
     prefixes: [spark/]
-    version_pattern: '^spark/v(?P<version>\d+\.\d+)/'
-    versioned_id: "spark-{version}"
   - id: flink
     prefixes: [flink/]
-    version_pattern: '^flink/v(?P<version>\d+\.\d+)/'
-    versioned_id: "flink-{version}"
   - id: kafka-connect
     prefixes: [kafka-connect/]
   - id: hive-mr

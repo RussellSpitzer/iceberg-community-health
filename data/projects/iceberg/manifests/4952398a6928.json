@@ -1,0 +1,26 @@
+{
+  "collected_at": "2026-10-22T22:15:00Z",
+  "run_id": "4952398a6928",
+  "sources": {
+    "git": {
+      "records": 101304,
+      "status": "ok"
+    },
+    "github": {
+      "records": 24108,
+      "status": "ok"
+    },
+    "ponymail": {
+      "records": 452,
+      "status": "ok"
+    },
+    "releases": {
+      "records": 40,
+      "status": "ok"
+    },
+    "roster": {
+      "records": 26,
+      "status": "ok"
+    }
+  }
+}

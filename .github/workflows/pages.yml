@@ -26,7 +26,9 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -e .
-      - run: iceberg-community-health run --fixture tests/fixtures/mini --as-of 2026-10-15T00:00:00Z --output site/output
+      - run: |
+          AS_OF=$(python -c 'import json; print(json.load(open("data/projects/iceberg/state/watermarks.json"))["as_of"])')
+          iceberg-community-health run --as-of "$AS_OF" --output site/output
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site/output

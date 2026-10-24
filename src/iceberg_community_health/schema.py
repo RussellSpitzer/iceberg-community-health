@@ -25,6 +25,7 @@ COLUMNS: dict[str, tuple[str, ...]] = {
         "draft",
         "path",
         "component",
+        "closed_by",
         "run_id",
         "collected_at",
     ),

@@ -68,8 +68,14 @@ def parse_git_log(text: str, repo: str, project: dict) -> list[dict]:
     return rows
 
 
-def collect_git(repo_path: str, repo: str, project: dict, limit: int | None = None) -> list[dict]:
-    command = ["git", "-C", repo_path, "log", "--no-merges"]
+def collect_git(
+    repo_path: str,
+    repo: str,
+    project: dict,
+    limit: int | None = None,
+    revision: str = "HEAD",
+) -> list[dict]:
+    command = ["git", "-C", repo_path, "log", revision, "--no-merges"]
     if limit is not None:
         command.extend(["-n", str(limit)])
     command.extend(
@@ -95,9 +101,30 @@ def parse_pulls(payload: object, repo: str, project: dict) -> list[dict]:
                 "draft": bool(pr.get("draft")),
                 "path": "",
                 "component": "",
+                "closed_by": _rest_closer(pr.get("closed_by")),
             }
         )
     return rows
+
+
+def _closer(node: dict) -> str | None:
+    for item in (node.get("timelineItems") or {}).get("nodes") or []:
+        login = ((item or {}).get("actor") or {}).get("login")
+        if login:
+            return str(login).strip()
+    login = ((node.get("mergedBy") or {}).get("login"))
+    if login:
+        return str(login).strip()
+    return None
+
+
+def _rest_closer(value: object) -> str | None:
+    if isinstance(value, dict):
+        login = value.get("login")
+        return str(login).strip() if login else None
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
 
 
 def parse_pull_files(payload: object) -> list[str]:
@@ -249,6 +276,126 @@ def parse_git_tags(text: str, repo: str) -> list[dict]:
             }
         )
     return rows
+
+
+_PR_QUERY = """
+query($owner: String!, $name: String!, $states: [PullRequestState!]!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(
+      states: $states
+      first: 20
+      after: $cursor
+      orderBy: {field: UPDATED_AT, direction: DESC}
+    ) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        number
+        updatedAt
+        author { login }
+        createdAt
+        closedAt
+        mergedAt
+        mergedBy { login }
+        isDraft
+        timelineItems(first: 1, itemTypes: [CLOSED_EVENT]) {
+          nodes { ... on ClosedEvent { actor { login } } }
+        }
+        files(first: 100) { nodes { path } }
+        reviews(first: 50) { nodes { author { login } submittedAt state } }
+      }
+    }
+  }
+}
+"""
+
+
+def gh_graphql(query: str, variables: dict) -> dict:
+    completed = subprocess.run(
+        ["gh", "api", "graphql", "--input", "-"],
+        input=json.dumps({"query": query, "variables": variables}),
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    body = json.loads(completed.stdout)
+    if body.get("errors"):
+        message = body["errors"][0].get("message", "GraphQL error")
+        raise RuntimeError(message)
+    return body["data"]
+
+
+def rows_from_pull_nodes(nodes: list[dict], repo: str, project: dict) -> tuple[list[dict], list[dict]]:
+    """Turn GitHub pull-request nodes into stored pull and review rows."""
+    pulls = []
+    files: dict[str, list[str]] = {}
+    reviews: list[dict] = []
+    for node in nodes:
+        number = str(node["number"])
+        author = (node.get("author") or {}).get("login")
+        pulls.append(
+            {
+                "repo": repo,
+                "number": number,
+                "author": canonical_login(author, project),
+                "created_at": norm_ts(node.get("createdAt")),
+                "closed_at": norm_ts(node.get("closedAt")),
+                "merged_at": norm_ts(node.get("mergedAt")),
+                "draft": bool(node.get("isDraft")),
+                "path": "",
+                "component": "",
+                "closed_by": _closer(node),
+            }
+        )
+        files[number] = [item["path"] for item in (node.get("files") or {}).get("nodes") or [] if item.get("path")]
+        for review in (node.get("reviews") or {}).get("nodes") or []:
+            submitted = review.get("submittedAt")
+            if not submitted:
+                continue
+            reviewer = (review.get("author") or {}).get("login")
+            reviews.append(
+                {
+                    "repo": repo,
+                    "number": number,
+                    "reviewer": canonical_login(reviewer, project),
+                    "submitted_at": norm_ts(submitted),
+                    "state": review.get("state") or "",
+                }
+            )
+    return with_files(pulls, files, project), reviews
+
+
+def collect_pulls(repo: str, project: dict, updated_since: str) -> tuple[list[dict], list[dict]]:
+    """Open pull requests, plus any pull request updated on or after `updated_since`."""
+    owner, name = repo.split("/", 1)
+    nodes = _walk_pulls(owner, name, ["OPEN", "CLOSED", "MERGED"], updated_since)
+    seen = {str(node["number"]) for node in nodes}
+    for node in _walk_pulls(owner, name, ["OPEN"], None):
+        if str(node["number"]) not in seen:
+            nodes.append(node)
+    return rows_from_pull_nodes(nodes, repo, project)
+
+
+def _walk_pulls(owner: str, name: str, states: list[str], stop_before: str | None) -> list[dict]:
+    nodes: list[dict] = []
+    cursor = None
+    while True:
+        data = gh_graphql(
+            _PR_QUERY,
+            {"owner": owner, "name": name, "states": states, "cursor": cursor},
+        )
+        connection = data["repository"]["pullRequests"]
+        page = connection["nodes"] or []
+        stop = False
+        for node in page:
+            updated = node.get("updatedAt") or ""
+            if stop_before is not None and updated < stop_before:
+                stop = True
+                break
+            nodes.append(node)
+        page_info = connection["pageInfo"]
+        if stop or not page_info["hasNextPage"]:
+            return nodes
+        cursor = page_info["endCursor"]
 
 
 def version_of(tag: str) -> str | None:

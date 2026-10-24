@@ -9,6 +9,7 @@ import uuid
 from pathlib import Path
 
 from iceberg_community_health.collectors import collect_git, collect_github_sample
+from iceberg_community_health.live import collect_records
 from iceberg_community_health.components import classify_path, load_rules
 from iceberg_community_health.config import find_root, load_project
 from iceberg_community_health.pipeline import annotate, load_fixture, report_from_store, store_records
@@ -32,6 +33,12 @@ def main(argv: list[str] | None = None) -> int:
     classify.add_argument("path")
     classify.add_argument("--root", type=Path)
 
+    collect = sub.add_parser("collect", help="Rebuild the store from public read-only sources")
+    collect.add_argument("--as-of", required=True)
+    collect.add_argument("--data-dir", type=Path, default=Path("data"))
+    collect.add_argument("--output", type=Path, default=Path("site/output"))
+    collect.add_argument("--root", type=Path)
+
     smoke = sub.add_parser("smoke", help="Bounded read-only check of local git and public GitHub")
     smoke.add_argument("--git-repo", type=Path, default=Path.home() / "repos" / "iceberg")
     smoke.add_argument("--limit", type=int, default=30)
@@ -44,6 +51,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "smoke":
         return _smoke(args)
+    if args.command == "collect":
+        return _collect(args)
     return _run(args)
 
 
@@ -63,6 +72,24 @@ def _run(args: argparse.Namespace) -> int:
     write_report(report, args.output)
     print(args.output / "index.html")
     return 0
+
+
+def _collect(args: argparse.Namespace) -> int:
+    root = args.root or find_root()
+    project = load_project(root)
+    as_of = norm_ts(args.as_of)
+    run_id = uuid.uuid4().hex[:12]
+    store = Store(args.data_dir, project["project_id"])
+    records, sources = collect_records(project, as_of)
+    manifest = store_records(store, records, run_id, as_of)
+    manifest["sources"] = sources
+    store.write_manifest(run_id, manifest)
+    store.remember_as_of(as_of)
+    report = report_from_store(store, project, as_of, manifest)
+    report["dataset"] = "collected"
+    write_report(report, args.output)
+    print(args.output / "index.html")
+    return 0 if all(item.get("status") != "failed" for item in sources.values()) else 1
 
 
 def _smoke(args: argparse.Namespace) -> int:

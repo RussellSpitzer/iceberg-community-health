@@ -40,6 +40,31 @@ def completed_month(as_of: str) -> tuple[str, str]:
     )
 
 
+def month_ends(as_of: str, count: int) -> list[str]:
+    """Month-end timestamps for the last `count` completed months, oldest first.
+
+    Each timestamp is the first instant of the next month. Passing it to
+    `completed_month` returns that completed month.
+    """
+    if count < 1:
+        return []
+    start, end = completed_month(as_of)
+    ends = [end]
+    for _ in range(count - 1):
+        start, end = completed_month(start)
+        ends.append(end)
+    ends.reverse()
+    return ends
+
+
+def previous_month(month: str) -> str:
+    """Return the `YYYY-MM` label before `month`."""
+    year, mon = (int(part) for part in month.split("-", 1))
+    if mon == 1:
+        return f"{year - 1}-12"
+    return f"{year}-{mon - 1:02d}"
+
+
 def hours_between(start: str, end: str) -> float:
     return (parse_ts(end) - parse_ts(start)).total_seconds() / 3600
 

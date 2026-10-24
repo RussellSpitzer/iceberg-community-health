@@ -11,7 +11,9 @@ Headcount metrics do not use that floor.
 | Metric | Population | Definition |
 | --- | --- | --- |
 | `pr_inflow` | pull requests opened in the month | Drafts are excluded. |
-| `pr_closures` | pull requests closed in the month | Drafts are excluded. |
+| `pr_closures` | pull requests closed in the month | Drafts are excluded. Includes merges, stale-bot closes, and other closes. |
+| `pr_closed_by_stale_bot` | unmerged pull requests closed in the month by the stale-bot account | The account is `github-actions`, which runs the repository stale workflow. A merge is not counted here. |
+| `pr_closed_by_committer` | pull requests closed in the month by a person | Merges count here. Closes by other bots, and closes with no recorded actor, stay in `pr_closures` only. |
 | `pr_backlog` | pull requests still open at `as_of` | Point measurement. |
 | `pr_age_days` | open pull requests | Median age in days. |
 | `stale_pr_rate` | open pull requests | Share open for at least 28 days. |

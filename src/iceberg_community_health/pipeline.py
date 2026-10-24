@@ -11,7 +11,7 @@ from iceberg_community_health.config import repo_by_id
 from iceberg_community_health.metrics import compute
 from iceberg_community_health.schema import TABLES
 from iceberg_community_health.storage import Store
-from iceberg_community_health.timeutil import norm_ts
+from iceberg_community_health.timeutil import completed_month, month_ends, norm_ts
 
 
 def run_sources(store: Store, sources: list, run_id: str, collected_at: str) -> dict:
@@ -75,10 +75,23 @@ def store_records(store: Store, records: dict[str, list[dict]], run_id: str, col
 
 def report_from_store(store: Store, project: dict, as_of: str, manifest: dict) -> dict:
     records = {table: store.read(table) for table in TABLES if table != "roster"}
-    report = compute(records, project, as_of, sources=manifest.get("sources"))
+    count = int(project["metrics"].get("history_months") or 1)
+    combined: list[dict] = []
+    report: dict = {}
+    for end in month_ends(as_of, count):
+        month_report = compute(records, project, end, sources=manifest.get("sources"))
+        month = completed_month(end)[0][:7]
+        for metric in month_report["metrics"]:
+            metric["month"] = month
+        combined.extend(month_report["metrics"])
+        report = month_report
+    report["metrics"] = combined
+    report["as_of"] = as_of
     report["sources"] = manifest.get("sources") or {}
     report["run_id"] = manifest.get("run_id")
-    report["reviewer_candidates"] = _candidates(records.get("reviews") or [], report["window_start"], report["window_end"])
+    report["reviewer_candidates"] = _candidates(
+        records.get("reviews") or [], report["window_start"], report["window_end"]
+    )
     store.write_metrics(manifest.get("run_id") or "fixture", report["metrics"])
     return report
 

@@ -71,6 +71,11 @@ class Store:
         path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
         return path
 
+    def remember_as_of(self, as_of: str) -> None:
+        state = self._watermarks()
+        state["as_of"] = as_of
+        self._write_watermarks(state)
+
     def write_metrics(self, run_id: str, rows: list[dict]) -> Path:
         directory = self.root / "snapshots" / run_id
         directory.mkdir(parents=True, exist_ok=True)
@@ -150,7 +155,9 @@ def _write_metrics_parquet(rows: list[dict], path: Path) -> None:
 def _read_parquet(files: list[Path]) -> list[dict]:
     connection = duckdb.connect()
     listed = ", ".join(f"'{_sql_path(path)}'" for path in files)
-    cursor = connection.execute(f"SELECT * FROM read_parquet([{listed}])")
+    cursor = connection.execute(
+        f"SELECT * FROM read_parquet([{listed}], union_by_name = true)"
+    )
     names = [item[0] for item in cursor.description]
     rows = [dict(zip(names, row, strict=True)) for row in cursor.fetchall()]
     connection.close()
