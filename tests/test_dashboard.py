@@ -34,7 +34,13 @@ _SECTIONS = {
         "merge_latency_hours",
     },
     "reviews": {"first_review_hours", "reviewer_hhi", "review_load"},
-    "mailing-list": {"dev_list_reply_hours", "unanswered_rate"},
+    "mailing-list": {
+        "dev_list_reply_hours",
+        "unanswered_rate",
+        "positive_share",
+        "neutral_share",
+        "negative_share",
+    },
     "releases": {"stable_releases", "time_since_last_release_days"},
 }
 
@@ -129,7 +135,6 @@ def test_dashboard_sections_and_ecosystem_cards(tmp_path):
         "reviews",
         "mailing-list",
         "releases",
-        "follow-up",
         "exclusions",
     ]
     nav = [
@@ -295,21 +300,15 @@ def test_empty_section_and_unknown_metric(tmp_path):
 
 def test_follow_up_exclusions_and_markup_are_escaped(tmp_path):
     report = _report(
-        recommendations=[
-            {
-                "metric_id": "stale_pr_rate",
-                "summary": "Triage <script>alert(1)</script>",
-                "follow_up": 'Run "pr-management-stats" & wait',
-            }
-        ],
         exclusions=[{"reason": "bot_commit<img>", "records": 3}],
         sources={"git<script>": {"status": "ok"}},
     )
     html, page = _render(tmp_path, report)
-    assert "<script>" not in html
-    assert all(tag != "script" for tag, _attrs in page.starts)
-    assert "Triage <script>alert(1)</script>" in " ".join(page.text)
-    assert 'Run "pr-management-stats" & wait' in " ".join(page.text)
+    assert "<script>alert" not in html
+    scripts = [attrs.get("id") for tag, attrs in page.starts if tag == "script"]
+    assert scripts == ["month-series", "month-picker"]
+    assert "Follow-up" not in " ".join(page.text)
+    assert "pr-management-stats" not in html
     assert "bot_commit<img>" in " ".join(page.text)
     assert "git<script>" in " ".join(page.text)
 
@@ -317,7 +316,7 @@ def test_follow_up_exclusions_and_markup_are_escaped(tmp_path):
 def test_empty_follow_up_and_exclusions(tmp_path):
     _html, page = _render(tmp_path, _report())
     text = " ".join(page.text)
-    assert "No configured threshold was crossed" in text
+    assert "Follow-up" not in text
     assert "No records were excluded." in text
 
 
@@ -343,11 +342,176 @@ def test_cards_explain_the_metric_and_list_iceberg_modules(tmp_path):
     assert page and html
 
 
+def test_month_picker_carries_every_completed_month(tmp_path):
+    report = _report(
+        metrics=[
+            _metric("pr_backlog", value=4, month="2026-08"),
+            _metric("pr_backlog", value=9, month="2026-09"),
+            _metric("stale_pr_rate", value=0.2, month="2026-08"),
+            _metric("stale_pr_rate", value=0.232, month="2026-09"),
+        ]
+    )
+    html, _page = _render(tmp_path, report)
+    assert 'id="window-from"' in html
+    assert 'id="window-to"' in html
+    assert '<option value="2026-08" selected>August 2026</option>' in html
+    assert '<option value="2026-09" selected>September 2026</option>' in html
+    payload = json.loads(html.split('id="month-series" type="application/json">', 1)[1].split("</script>", 1)[0])
+    assert payload["metrics"]["pr_backlog"]["2026-08"]["display"] == "4"
+    assert payload["metrics"]["stale_pr_rate"]["2026-09"]["display"] == "23.2%"
+    assert "compared with August 2026" in html
+    backlog = html.split('data-metric="pr_backlog"', 1)[1].split("</article>", 1)[0]
+    assert '<p class="delta">+5</p>' in backlog
+    rate = html.split('data-metric="stale_pr_rate"', 1)[1].split("</article>", 1)[0]
+    assert "+3.2 pt" in rate
+    assert 'data-span="12"' not in html
+
+
+def _months(count, newest_year=2026, newest_month=9):
+    months = []
+    year, month = newest_year, newest_month
+    for _ in range(count):
+        months.append(f"{year}-{month:02d}")
+        year, month = (year - 1, 12) if month == 1 else (year, month - 1)
+    return list(reversed(months))
+
+
+def test_page_opens_on_the_last_year_and_keeps_every_month(tmp_path):
+    months = _months(72)
+    report = _report(
+        view_months=12,
+        metrics=[_metric("pr_backlog", value=index, month=month) for index, month in enumerate(months)],
+    )
+    html, _page = _render(tmp_path, report)
+    assert '<option value="2025-10" selected>October 2025</option>' in html
+    assert '<option value="2026-09" selected>September 2026</option>' in html
+    assert html.count(" selected>") == 2
+    payload = json.loads(html.split('id="month-series" type="application/json">', 1)[1].split("</script>", 1)[0])
+    assert len(payload["months"]) == 72
+    assert len(payload["metrics"]["pr_backlog"]) == 72
+    spark = html.split('<figure class="spark">', 1)[1].split("</figure>", 1)[0]
+    assert spark.count("<circle") == 12
+    assert ">60<" in spark and ">71<" in spark
+    card_value = html.split('data-metric="pr_backlog"', 1)[1].split("</article>", 1)[0]
+    assert '<span class="value">71</span>' in card_value
+    assert '<p class="delta">+11</p>' in card_value
+    assert "compared with October 2025" in html
+    assert 'data-span="12" aria-pressed="true"' in html
+    assert 'data-span="36"' in html
+    assert 'data-span="72"' in html
+    assert 'id="window-from-range" min="0" max="71" value="60"' in html
+    assert '<optgroup label="2025">' in html
+
+
+def test_wide_window_thins_the_sparkline(tmp_path):
+    months = _months(72)
+    report = _report(
+        view_months=72,
+        metrics=[_metric("pr_backlog", value=index, month=month) for index, month in enumerate(months)],
+    )
+    html, _page = _render(tmp_path, report)
+    spark = html.split('<figure class="spark">', 1)[1].split("</figure>", 1)[0]
+    assert spark.count("<circle") == 12
+    assert ">5<" in spark and ">71<" in spark
+    assert "Math.ceil(values.length / 12)" in html
+
+    year = _months(18)
+    close = _report(
+        view_months=18,
+        metrics=[_metric("pr_backlog", value=index, month=month) for index, month in enumerate(year)],
+    )
+    close_html, _page = _render(tmp_path, close)
+    close_spark = close_html.split('<figure class="spark">', 1)[1].split("</figure>", 1)[0]
+    assert close_spark.count("<circle") == 18
+
+
+def test_tone_cards_show_shares_and_population(tmp_path):
+    report = _report(
+        metrics=[
+            _metric("positive_share", value=0.25, population_count=40),
+            _metric("negative_share", value=None, flag="insufficient_data", population_count=3),
+        ]
+    )
+    html, page = _render(tmp_path, report)
+    text = " ".join(page.text)
+    assert "Positive-tone messages" in text
+    assert "25.0%" in text
+    assert "n=40" in text
+    assert "not a judgment of any person" in html
+    negative = html.split('data-metric="negative_share"', 1)[1].split("</article>", 1)[0]
+    assert "insufficient data" in negative
+    assert "n=3" in negative
+
+
+def test_iceberg_opens_a_module_column(tmp_path):
+    report = _report(
+        metrics=[
+            _metric("pr_backlog", value=9, scope_type="repo", scope_id="apache/iceberg"),
+            _metric("pr_backlog", value=3, scope_type="repo", scope_id="apache/iceberg-rust"),
+            _metric("pr_backlog", value=7, scope_type="component", scope_id="spark"),
+            _metric("pr_backlog", value=1, scope_type="component", scope_id="cross-cutting"),
+        ]
+    )
+    html, page = _render(tmp_path, report)
+    menus = [attrs for tag, attrs in page.starts if tag == "div" and attrs.get("class") == "module-menu"]
+    assert len(menus) == 1
+    assert "modules/spark.html" in html
+    assert "modules/cross-cutting.html" not in html
+    assert ">Modules<" not in html
+    assert "module-choice" not in html.split('class="module-label"', 1)[1].split("</button>", 1)[0]
+    column = html.split('class="module-column"', 1)[1].split("</div>", 1)[0]
+    assert "modules/spark.html" in column
+    assert "projects/iceberg-rust.html" not in column
+    assert ":hover .module-column" in html
+    assert ":focus-within .module-column" in html
+
+    iceberg = (tmp_path / "projects" / "iceberg.html").read_text()
+    assert '<span class="module-name">Iceberg</span><span class="module-choice">repository</span>' in iceberg
+    assert 'href="../projects/iceberg.html" aria-current="page">repository</a>' in iceberg
+    spark = (tmp_path / "modules" / "spark.html").read_text()
+    assert '<span class="module-name">Iceberg</span><span class="module-choice">spark</span>' in spark
+    assert 'href="../modules/spark.html" aria-current="page">spark</a>' in spark
+
+
+def test_exemplar_rows_link_the_pull_request_name_and_value(tmp_path):
+    report = _report(
+        metrics=[
+            _metric(
+                "merge_latency_hours",
+                value=48,
+                exemplars=[
+                    {
+                        "side": "longest",
+                        "href": "https://github.com/apache/iceberg/pull/6",
+                        "text": "PR #6 - Read total bytes - 20 days",
+                    },
+                    {
+                        "side": "fastest",
+                        "href": "https://github.com/apache/iceberg/pull/1",
+                        "text": "PR #1 - Fix the clock - 1 day",
+                    },
+                ],
+            )
+        ]
+    )
+    html, page = _render(tmp_path, report)
+    assert '<summary>Slowest and fastest</summary>' in html
+    assert 'href="https://github.com/apache/iceberg/pull/6"' in html
+    text = " ".join(page.text)
+    assert "PR #6 - Read total bytes - 20 days" in text
+    assert "PR #1 - Fix the clock - 1 day" in text
+    assert "Longest" in text
+    assert "Fastest" in text
+
+
 def test_header_uses_calendar_dates(tmp_path):
     html, page = _render(tmp_path, _report())
     text = " ".join(page.text)
     assert "15 October 2026" in text
-    assert "September 2026, compared with August 2026" in text
+    assert "September 2026" in text
+    assert '<span id="month-compared"></span>' in html
+    assert 'id="window-from"' in html
+    assert 'id="window-to"' in html
     assert "T00:00:00Z" not in html
     assert "<dt>Scope</dt>" in html
 
@@ -358,6 +522,7 @@ def test_downloads_and_no_composite_score_in_the_payload(tmp_path):
     hrefs = [attrs.get("href") for _tag, attrs in page.starts if attrs.get("href")]
     assert "metrics.json" in hrefs
     assert "metrics.csv" in hrefs
+    assert "https://github.com/RussellSpitzer/iceberg-community-health" in hrefs
     payload = json.loads((tmp_path / "metrics.json").read_text())
     assert "score" not in payload
     assert "does not combine them into a score" in html

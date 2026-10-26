@@ -19,7 +19,43 @@ from iceberg_community_health.collectors import (
 from iceberg_community_health.timeutil import completed_month, month_ends
 
 
-def collect_records(project: dict, as_of: str) -> tuple[dict[str, list[dict]], dict]:
+def git_since(has_commits: bool, as_of: str) -> str | None:
+    """Return the start of the open month, or None when the commit history is not stored yet."""
+    if not has_commits or len(as_of) < 7:
+        return None
+    return f"{as_of[:7]}-01T00:00:00Z"
+
+
+def github_updated_since(
+    has_pulls: bool,
+    watermark: str | None,
+    history_start: str,
+    coverage_start: str | None,
+) -> str:
+    """Fetch only pull requests updated since the last collect once the store covers the history window."""
+    if has_pulls and watermark and coverage_start and coverage_start <= history_start:
+        return watermark
+    return history_start
+
+
+def github_coverage(previous: str | None, walked_since: str) -> str:
+    """The earliest update time the stored pull requests are complete from."""
+    if previous and previous <= walked_since:
+        return previous
+    return walked_since
+
+
+def mail_months(month_starts: list[str], stored: set[str], open_month: str) -> list[str]:
+    """Completed months already stored with tone labels are not downloaded again. The open month always is."""
+    chosen = []
+    for start in month_starts:
+        month = start[:7]
+        if month == open_month or month not in stored:
+            chosen.append(start)
+    return chosen
+
+
+def collect_records(project: dict, as_of: str, store=None) -> tuple[dict[str, list[dict]], dict]:
     """Read public git, GitHub, mail, release, and roster sources.
 
     Returns the normalized records and a source manifest. A failed source is
@@ -37,17 +73,32 @@ def collect_records(project: dict, as_of: str) -> tuple[dict[str, list[dict]], d
     }
     sources: dict[str, dict] = {}
 
-    commits, tags, git_errors = _git(project)
+    since = git_since(bool(store and store.event_months("commits")), as_of)
+    commits, tags, git_errors = _git(project, since)
     records["commits"] = commits
     records["releases"].extend(tags)
     sources["git"] = _status(git_errors, len(commits) + len(tags))
 
-    pulls, reviews, pull_errors = _pulls(project, month_starts[0])
+    previous_collect = None
+    coverage_start = None
+    if store is not None:
+        previous_collect = store.watermark("github") or store.collected_as_of()
+        coverage_start = store.state("github").get("coverage_start")
+    updated_since = github_updated_since(
+        bool(store and store.event_months("prs")),
+        previous_collect,
+        month_starts[0],
+        coverage_start,
+    )
+    _log(f"github updated since {updated_since}")
+    pulls, reviews, pull_errors = _pulls(project, updated_since)
     records["prs"] = pulls
     records["reviews"] = reviews
     sources["github"] = _status(pull_errors, len(pulls) + len(reviews))
+    sources["github"]["updated_since"] = updated_since
 
-    messages, mail_errors = _mail(project, month_starts)
+    stored_mail = set() if store is None else store.event_months("messages", labeled="sentiment")
+    messages, mail_errors = _mail(project, mail_months(month_starts, stored_mail, as_of[:7]))
     records["messages"] = messages
     sources["ponymail"] = _status(mail_errors, len(messages))
 
@@ -69,7 +120,7 @@ def collect_records(project: dict, as_of: str) -> tuple[dict[str, list[dict]], d
     return records, sources
 
 
-def _git(project: dict) -> tuple[list[dict], list[dict], list[str]]:
+def _git(project: dict, since: str | None) -> tuple[list[dict], list[dict], list[str]]:
     commits: list[dict] = []
     tags: list[dict] = []
     errors: list[str] = []
@@ -79,7 +130,7 @@ def _git(project: dict) -> tuple[list[dict], list[dict], list[str]]:
             checkout = _checkout(repo_id)
             revision = _apache_revision(checkout, repo_id)
             _log(f"git {repo_id} {revision}")
-            commits.extend(collect_git(str(checkout), repo_id, project, revision=revision))
+            commits.extend(collect_git(str(checkout), repo_id, project, revision=revision, since=since))
             tags.extend(_tags(checkout, repo_id))
         except Exception as exc:
             errors.append(f"{repo_id}: {exc}")

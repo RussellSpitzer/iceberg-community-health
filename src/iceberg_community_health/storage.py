@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+from collections import defaultdict
 from pathlib import Path
 
 import duckdb
 
-from iceberg_community_health.schema import COLUMNS, PRIMARY_KEYS, TABLES
+from iceberg_community_health.schema import COLUMNS, EVENT_TIME, PRIMARY_KEYS, TABLES
 
 
 class Store:
@@ -31,26 +32,72 @@ class Store:
     ) -> Path | None:
         if table not in TABLES:
             raise ValueError(f"Unknown table {table}")
-        stamped = []
+        grouped: dict[str, list[dict]] = defaultdict(list)
         for row in rows:
             item = {column: _cell(row.get(column)) for column in COLUMNS[table]}
             item["run_id"] = run_id
             item["collected_at"] = collected_at
-            stamped.append(item)
-        if not stamped:
-            return None
-        day = collected_at[:10]
-        directory = self.root / "raw" / source / table / f"date={day}"
-        directory.mkdir(parents=True, exist_ok=True)
-        path = directory / f"part-{run_id}.parquet"
-        _write_parquet(table, stamped, path)
-        return path
+            grouped[_event_month(table, row, collected_at)].append(item)
+        written = None
+        for month, stamped in grouped.items():
+            directory = self.root / "raw" / source / table / f"month={month}"
+            directory.mkdir(parents=True, exist_ok=True)
+            path = directory / f"part-{run_id}.parquet"
+            _write_parquet(table, stamped, path)
+            written = path
+        return written
+
+    def files(self, table: str) -> list[Path]:
+        month_parts = sorted(self.root.glob(f"raw/*/{table}/month=*/part-*.parquet"))
+        legacy = sorted(self.root.glob(f"raw/*/{table}/date=*/part-*.parquet"))
+        return month_parts + legacy
 
     def read(self, table: str) -> list[dict]:
-        files = sorted(self.root.glob(f"raw/*/{table}/date=*/part-*.parquet"))
+        files = self.files(table)
         if not files:
             return []
         return _dedupe(table, _read_parquet(files))
+
+    def event_months(self, table: str, labeled: str | None = None) -> set[str]:
+        """Months with stored rows, or only months with a non-null `labeled` column when one is named."""
+        column = EVENT_TIME.get(table)
+        files = self.files(table)
+        if not column or not files:
+            return set()
+        listed = ", ".join(f"'{_sql_path(path)}'" for path in files)
+        source = f"read_parquet([{listed}], union_by_name = true)"
+        connection = duckdb.connect()
+        condition = ""
+        if labeled is not None:
+            names = {row[0] for row in connection.execute(f"DESCRIBE SELECT * FROM {source}").fetchall()}
+            if labeled not in names:
+                connection.close()
+                return set()
+            condition = f"AND {labeled} IS NOT NULL"
+        cursor = connection.execute(
+            f"""
+            SELECT DISTINCT substring({column}, 1, 7)
+            FROM {source}
+            WHERE {column} IS NOT NULL AND length({column}) >= 7 {condition}
+            """
+        )
+        months = {row[0] for row in cursor.fetchall() if row[0]}
+        connection.close()
+        return months
+
+    def watermark(self, source: str) -> str | None:
+        return self._watermarks().get(source, {}).get("watermark")
+
+    def state(self, source: str) -> dict:
+        return dict(self._watermarks().get(source, {}))
+
+    def set_state(self, source: str, key: str, value: str) -> None:
+        state = self._watermarks()
+        state.setdefault(source, {})[key] = value
+        self._write_watermarks(state)
+
+    def collected_as_of(self) -> str | None:
+        return self._watermarks().get("as_of")
 
     def mark_good(self, source: str, run_id: str, watermark: str | None = None) -> None:
         state = self._watermarks()
@@ -95,6 +142,16 @@ class Store:
         (directory / "watermarks.json").write_text(
             json.dumps(state, indent=2, sort_keys=True) + "\n"
         )
+
+
+def _event_month(table: str, row: dict, collected_at: str) -> str:
+    column = EVENT_TIME.get(table)
+    stamp = "" if column is None else str(row.get(column) or "")
+    if len(stamp) >= 7 and stamp[4] == "-":
+        return stamp[:7]
+    if len(collected_at) >= 7:
+        return collected_at[:7]
+    return "unknown"
 
 
 def _cell(value: object) -> str | None:

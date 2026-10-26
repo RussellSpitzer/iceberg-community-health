@@ -1,0 +1,28 @@
+{
+  "collected_at": "2026-10-26T18:07:51Z",
+  "run_id": "95fa32bef7f4",
+  "sources": {
+    "git": {
+      "records": 2827,
+      "status": "ok"
+    },
+    "github": {
+      "error": "apache/iceberg-go: gh api graphql failed: Post \"https://api.github.com/graphql\": net/http: TLS handshake timeout",
+      "records": 216501,
+      "status": "partial",
+      "updated_since": "2020-10-01T00:00:00Z"
+    },
+    "ponymail": {
+      "records": 0,
+      "status": "ok"
+    },
+    "releases": {
+      "records": 40,
+      "status": "ok"
+    },
+    "roster": {
+      "records": 26,
+      "status": "ok"
+    }
+  }
+}

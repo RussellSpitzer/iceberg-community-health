@@ -35,7 +35,8 @@ Read `build/sample/index.html`, `build/sample/metrics.json`, and
   that directory locally and commit it. Do not enable the nightly collect
   schedule. A live dataset replacing the sample is a separate human action,
   described in `docs/LIMITATIONS.md`.
-- Do not add a composite score or a sentiment metric.
+- Do not add a composite score. The dev-list tone shares are a rough lexicon
+  on public mail, not a judgment of any person; report them as shares with n.
 - Report withheld metrics as `insufficient_data`. Do not fill them in.
 - When `recommendations` names a follow-up, repeat that suggestion and stop.
   The pinned Magpie skills `pr-management-stats` and `reviewer-routing` are

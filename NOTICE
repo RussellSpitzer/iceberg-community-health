@@ -10,6 +10,7 @@ https://github.com/pmcfadin/cassandra-project-health, which is licensed under
 the Apache License, Version 2.0. This repository does not copy that project's
 source. https://github.com/pmcfadin/cassandra-pr-review was consulted as
 design research only; its code and assets are not included.
+The dev-list tone metric idea is adapted from pmcfadin/cassandra-project-health.
 
 Apache Magpie is pinned as a git submodule at third_party/magpie and remains
 covered by its own Apache License, Version 2.0. Its source is not copied into

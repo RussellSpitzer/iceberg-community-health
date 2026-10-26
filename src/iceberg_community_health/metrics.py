@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import re
+import tempfile
 from collections import defaultdict
+from pathlib import Path
 
 import duckdb
 
@@ -27,6 +30,7 @@ _PR_COLUMNS = (
     "draft",
     "component",
     "closed_by",
+    "title",
 )
 _REVIEW_COLUMNS = ("repo", "number", "reviewer", "submitted_at", "component")
 
@@ -243,15 +247,15 @@ def _pull_metrics(
         for row in opened
         if row["created_at"] <= as_of and (row["closed_at"] is None or row["closed_at"] > as_of)
     ]
-    ages = [days_between(row["created_at"], as_of) for row in open_now]
-    stale = [age for age in ages if age >= settings["stale_days"]]
-    merge_hours = [hours_between(row["created_at"], row["merged_at"]) for row in merged]
+    ages = [(row, days_between(row["created_at"], as_of)) for row in open_now]
+    stale = [age for _row, age in ages if age >= settings["stale_days"]]
+    merge_hours = [(row, hours_between(row["created_at"], row["merged_at"])) for row in merged]
     first_reviews = _first_reviews(connection, scope_type, scope_id)
     response_hours = []
     for row in inflow:
         reviewed_at = first_reviews.get((row["repo"], row["number"]))
         if reviewed_at and reviewed_at >= row["created_at"]:
-            response_hours.append(hours_between(row["created_at"], reviewed_at))
+            response_hours.append((row, hours_between(row["created_at"], reviewed_at)))
     stale_rate = (len(stale) / len(open_now)) if open_now else None
     return [
         _count("pr_inflow", scope_type, scope_id, month_start, month_end, len(inflow), definition, tier),
@@ -277,17 +281,20 @@ def _pull_metrics(
             tier,
         ),
         _count("pr_backlog", scope_type, scope_id, as_of, as_of, len(open_now), definition, tier),
-        _sample(
-            "pr_age_days",
-            scope_type,
-            scope_id,
-            as_of,
-            as_of,
-            _median(ages),
-            len(ages),
-            floors["latency"],
-            definition,
-            tier,
+        _with_exemplars(
+            _sample(
+                "pr_age_days",
+                scope_type,
+                scope_id,
+                as_of,
+                as_of,
+                _median([age for _row, age in ages]),
+                len(ages),
+                floors["latency"],
+                definition,
+                tier,
+            ),
+            _exemplar_rows(ages, "days", "days"),
         ),
         _sample(
             "stale_pr_rate",
@@ -296,34 +303,40 @@ def _pull_metrics(
             as_of,
             as_of,
             stale_rate,
-            len(open_now),
+            len(ages),
             floors["rate"],
             definition,
             tier,
         ),
-        _sample(
-            "merge_latency_hours",
-            scope_type,
-            scope_id,
-            month_start,
-            month_end,
-            _median(merge_hours),
-            len(merge_hours),
-            floors["latency"],
-            definition,
-            tier,
+        _with_exemplars(
+            _sample(
+                "merge_latency_hours",
+                scope_type,
+                scope_id,
+                month_start,
+                month_end,
+                _median([hours for _row, hours in merge_hours]),
+                len(merge_hours),
+                floors["latency"],
+                definition,
+                tier,
+            ),
+            _exemplar_rows(merge_hours, "hours", "days"),
         ),
-        _sample(
-            "first_review_hours",
-            scope_type,
-            scope_id,
-            month_start,
-            month_end,
-            _median(response_hours),
-            len(response_hours),
-            floors["latency"],
-            definition,
-            tier,
+        _with_exemplars(
+            _sample(
+                "first_review_hours",
+                scope_type,
+                scope_id,
+                month_start,
+                month_end,
+                _median([hours for _row, hours in response_hours]),
+                len(response_hours),
+                floors["latency"],
+                definition,
+                tier,
+            ),
+            _exemplar_rows(response_hours, "hours", "hours"),
         ),
     ]
 
@@ -390,7 +403,27 @@ def _mail_metrics(messages, month_start, month_end, floors, definition, project_
         hours_between(first["sent_at"], reply["sent_at"]) for first, reply in started if reply is not None
     ]
     rate = (unanswered / len(started)) if started else None
-    return [
+    labels = [
+        message["sentiment"]
+        for message in messages
+        if message.get("sentiment") and month_start <= message["sent_at"] < month_end
+    ]
+    tone = [
+        _sample(
+            f"{name}_share",
+            "ecosystem",
+            project_id,
+            month_start,
+            month_end,
+            (labels.count(name) / len(labels)) if labels else None,
+            len(labels),
+            floors["rate"],
+            definition,
+            tier,
+        )
+        for name in ("positive", "neutral", "negative")
+    ]
+    return tone + [
         _sample(
             "unanswered_rate",
             "ecosystem",
@@ -543,7 +576,7 @@ def _pull_facts(connection, scope_type, scope_id):
     rows = connection.execute(
         f"""
         SELECT repo, number, MIN(author), MIN(created_at), MIN(closed_at), MIN(merged_at),
-               MIN(closed_by)
+               MIN(closed_by), MIN(title)
         FROM prs
         WHERE draft IS DISTINCT FROM 'true' AND {_SCOPE_SQL}
         GROUP BY repo, number
@@ -559,8 +592,9 @@ def _pull_facts(connection, scope_type, scope_id):
             "closed_at": closed_at,
             "merged_at": merged_at,
             "closed_by": closed_by,
+            "title": title,
         }
-        for repo, number, author, created_at, closed_at, merged_at, closed_by in rows
+        for repo, number, author, created_at, closed_at, merged_at, closed_by, title in rows
     ]
 
 
@@ -761,6 +795,7 @@ def _clean_pull(row: dict) -> dict:
         "draft": "true" if draft in (True, "true") else "false",
         "component": _family(row.get("component")),
         "closed_by": (row.get("closed_by") or None),
+        "title": " ".join(str(row.get("title") or "").split()) or None,
     }
 
 
@@ -780,6 +815,7 @@ def _clean_message(row: dict) -> dict:
         "message_id": row.get("message_id"),
         "sender": row.get("sender") or None,
         "sent_at": norm_ts(row.get("sent_at")),
+        "sentiment": row.get("sentiment") or None,
     }
 
 
@@ -788,11 +824,21 @@ def _register(connection, name: str, rows: list[dict], columns: tuple[str, ...])
     connection.execute(f"CREATE TABLE {name} ({definitions})")
     if not rows:
         return
-    placeholders = ", ".join("?" for _ in columns)
-    connection.executemany(
-        f"INSERT INTO {name} VALUES ({placeholders})",
-        [tuple(row.get(column) for column in columns) for row in rows],
-    )
+    types = ", ".join(f"'{column}': 'VARCHAR'" for column in columns)
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / f"{name}.ndjson"
+        with path.open("w") as handle:
+            for row in rows:
+                handle.write(json.dumps({column: _text(row.get(column)) for column in columns}))
+                handle.write("\n")
+        connection.execute(
+            f"INSERT INTO {name} SELECT {', '.join(columns)} FROM read_json("
+            f"'{str(path).replace(chr(39), chr(39) * 2)}', format = 'newline_delimited', columns = {{{types}}})"
+        )
+
+
+def _text(value: object) -> str | None:
+    return None if value is None else str(value)
 
 
 def _scope_params(scope_type: str, scope_id: str) -> list[str]:
@@ -844,6 +890,86 @@ def _base(metric_id, scope_type, scope_id, start, end, value, population, flag, 
 
 def _count(metric_id, scope_type, scope_id, start, end, value, definition, tier):
     return _base(metric_id, scope_type, scope_id, start, end, value, value, "ok", definition, tier)
+
+
+def _with_exemplars(metric: dict, exemplars: list[dict]) -> dict:
+    if exemplars:
+        metric["exemplars"] = exemplars
+    return metric
+
+
+def _exemplar_rows(
+    observations: list[tuple[dict, float]],
+    source_unit: str,
+    display_unit: str,
+) -> list[dict]:
+    converted = []
+    for row, amount in observations:
+        shown = amount / 24 if source_unit == "hours" and display_unit == "days" else amount
+        converted.append((row, shown))
+    converted.sort(key=lambda item: (item[1], str(item[0]["repo"]), str(item[0]["number"])))
+    slowest, fastest = _exemplar_ends(converted)
+    rows = []
+    for side, chosen in (("longest", slowest), ("fastest", fastest)):
+        for row, amount in chosen:
+            repo = str(row["repo"])
+            number = str(row["number"])
+            title = " ".join(str(row.get("title") or "").split())
+            value = _exemplar_duration(amount, display_unit)
+            rows.append(
+                {
+                    "side": side,
+                    "repo": repo,
+                    "number": number,
+                    "title": title,
+                    "value": value,
+                    "href": f"https://github.com/{repo}/pull/{number}",
+                    "text": _exemplar_text(number, title, value),
+                }
+            )
+    return rows
+
+
+def apply_exemplar_titles(metrics: list[dict], titles: dict[tuple[str, str], str]) -> None:
+    """Fill pull-request names that were not stored with the original row."""
+    for metric in metrics:
+        for item in metric.get("exemplars") or []:
+            if item.get("title"):
+                continue
+            title = titles.get((str(item.get("repo") or ""), str(item.get("number") or "")))
+            if not title:
+                continue
+            item["title"] = title
+            item["text"] = _exemplar_text(str(item["number"]), title, str(item.get("value") or ""))
+
+
+def _exemplar_text(number: str, title: str, value: str) -> str:
+    if title:
+        return f"PR #{number} - {title} - {value}"
+    return f"PR #{number} - {value}"
+
+
+def _exemplar_ends(
+    ordered: list[tuple[dict, float]],
+) -> tuple[list[tuple[dict, float]], list[tuple[dict, float]]]:
+    count = len(ordered)
+    if count == 0:
+        return [], []
+    if count <= 3:
+        return list(reversed(ordered)), []
+    fast_count = min(3, count // 2)
+    slow_count = min(3, count - fast_count)
+    return list(reversed(ordered[-slow_count:])), ordered[:fast_count]
+
+
+def _exemplar_duration(amount: float, unit: str) -> str:
+    rounded = round(amount, 1)
+    if rounded == int(rounded):
+        number = str(int(rounded))
+    else:
+        number = f"{rounded:.1f}"
+    name = unit[:-1] if number == "1" and unit.endswith("s") else unit
+    return f"{number} {name}"
 
 
 def _sample(metric_id, scope_type, scope_id, start, end, value, population, floor, definition, tier):

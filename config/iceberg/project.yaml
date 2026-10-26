@@ -68,7 +68,8 @@ metrics:
   sustained_commits: 5
   sustained_window_days: 365
   release_window_days: 730
-  history_months: 12
+  history_months: 72
+  view_months: 12
   floors:
     rate: 5
     latency: 5

@@ -26,6 +26,7 @@ COLUMNS: dict[str, tuple[str, ...]] = {
         "path",
         "component",
         "closed_by",
+        "title",
         "run_id",
         "collected_at",
     ),
@@ -44,6 +45,7 @@ COLUMNS: dict[str, tuple[str, ...]] = {
         "thread_id",
         "sender",
         "sent_at",
+        "sentiment",
         "run_id",
         "collected_at",
     ),
@@ -62,6 +64,15 @@ COLUMNS: dict[str, tuple[str, ...]] = {
         "run_id",
         "collected_at",
     ),
+}
+
+EVENT_TIME: dict[str, str | None] = {
+    "commits": "committed_at",
+    "prs": "created_at",
+    "reviews": "submitted_at",
+    "messages": "sent_at",
+    "releases": "created_at",
+    "roster": None,
 }
 
 PRIMARY_KEYS: dict[str, tuple[str, ...]] = {

@@ -8,8 +8,9 @@ import sys
 import uuid
 from pathlib import Path
 
-from iceberg_community_health.collectors import collect_git, collect_github_sample
-from iceberg_community_health.live import collect_records
+from iceberg_community_health.collectors import collect_git, collect_github_sample, exemplar_titles
+from iceberg_community_health.metrics import apply_exemplar_titles
+from iceberg_community_health.live import collect_records, github_coverage
 from iceberg_community_health.components import classify_path, load_rules
 from iceberg_community_health.config import find_root, load_project
 from iceberg_community_health.pipeline import annotate, load_fixture, report_from_store, store_records
@@ -69,6 +70,8 @@ def _run(args: argparse.Namespace) -> int:
         manifest = {"run_id": run_id, "sources": {}}
     report = report_from_store(store, project, as_of, manifest)
     report["dataset"] = "sample" if args.fixture else "collected"
+    if not args.fixture:
+        apply_exemplar_titles(report["metrics"], exemplar_titles(report["metrics"]))
     write_report(report, args.output)
     print(args.output / "index.html")
     return 0
@@ -80,13 +83,21 @@ def _collect(args: argparse.Namespace) -> int:
     as_of = norm_ts(args.as_of)
     run_id = uuid.uuid4().hex[:12]
     store = Store(args.data_dir, project["project_id"])
-    records, sources = collect_records(project, as_of)
+    records, sources = collect_records(project, as_of, store)
     manifest = store_records(store, records, run_id, as_of)
     manifest["sources"] = sources
     store.write_manifest(run_id, manifest)
+    for name, info in sources.items():
+        if info.get("status") in {"ok", "partial"}:
+            store.mark_good(name, run_id, as_of)
+    github = sources.get("github") or {}
+    if github.get("status") == "ok" and github.get("updated_since"):
+        previous = store.state("github").get("coverage_start")
+        store.set_state("github", "coverage_start", github_coverage(previous, github["updated_since"]))
     store.remember_as_of(as_of)
     report = report_from_store(store, project, as_of, manifest)
     report["dataset"] = "collected"
+    apply_exemplar_titles(report["metrics"], exemplar_titles(report["metrics"]))
     write_report(report, args.output)
     print(args.output / "index.html")
     return 0 if all(item.get("status") != "failed" for item in sources.values()) else 1

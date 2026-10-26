@@ -5,17 +5,22 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import time
 import urllib.request
+from collections import defaultdict
 from collections.abc import Callable
 from email.parser import Parser
 from email.utils import parsedate_to_datetime
 
+from iceberg_community_health import sentiment
 from iceberg_community_health.components import classify_path, load_rules
 from iceberg_community_health.config import canonical_email, canonical_login, repo_by_id
 from iceberg_community_health.timeutil import norm_ts
 
 _ARCHIVE_VERSION = re.compile(r"apache-iceberg-(\d+\.\d+\.\d+)/")
 _VERSION = re.compile(r"(?i)(?:^|[^\d])v?(\d+\.\d+\.\d+)$")
+_SERVER_ERROR = re.compile(r"HTTP 5\d\d|(?i:timeout)")
+GH_RETRY_SECONDS = (5, 15, 30, 60)
 
 
 class Source:
@@ -74,8 +79,11 @@ def collect_git(
     project: dict,
     limit: int | None = None,
     revision: str = "HEAD",
+    since: str | None = None,
 ) -> list[dict]:
     command = ["git", "-C", repo_path, "log", revision, "--no-merges"]
+    if since:
+        command.append(f"--since={since}")
     if limit is not None:
         command.extend(["-n", str(limit)])
     command.extend(
@@ -99,6 +107,7 @@ def parse_pulls(payload: object, repo: str, project: dict) -> list[dict]:
                 "closed_at": norm_ts(pr.get("closed_at")),
                 "merged_at": norm_ts(pr.get("merged_at")),
                 "draft": bool(pr.get("draft")),
+                "title": pr.get("title") or "",
                 "path": "",
                 "component": "",
                 "closed_by": _rest_closer(pr.get("closed_by")),
@@ -217,9 +226,35 @@ def parse_mbox(text: str, list_name: str, project: dict) -> list[dict]:
                 "thread_id": thread_id,
                 "sender": canonical_email(message.get("From"), project),
                 "sent_at": norm_ts(parsedate_to_datetime(sent).isoformat()),
+                "sentiment": _message_tone(message),
             }
         )
     return rows
+
+
+def _message_tone(message) -> str | None:
+    body = _plain_text(message)
+    if body is None:
+        return None
+    return sentiment.label(str(message.get("Subject") or ""), body)
+
+
+def _plain_text(message) -> str | None:
+    """The first text/plain part, or None when the message has no plain text."""
+    for part in message.walk():
+        if part.is_multipart() or part.get_content_type() != "text/plain":
+            continue
+        if part.get_filename():
+            continue
+        payload = part.get_payload(decode=True)
+        if payload is None:
+            return None
+        charset = part.get_content_charset() or "utf-8"
+        try:
+            return payload.decode(charset, errors="replace")
+        except LookupError:
+            return payload.decode("utf-8", errors="replace")
+    return None
 
 
 def parse_roster(payload: dict, committee: str) -> list[dict]:
@@ -290,6 +325,7 @@ query($owner: String!, $name: String!, $states: [PullRequestState!]!, $cursor: S
       pageInfo { hasNextPage endCursor }
       nodes {
         number
+        title
         updatedAt
         author { login }
         createdAt
@@ -309,14 +345,60 @@ query($owner: String!, $name: String!, $states: [PullRequestState!]!, $cursor: S
 """
 
 
-def gh_graphql(query: str, variables: dict) -> dict:
-    completed = subprocess.run(
-        ["gh", "api", "graphql", "--input", "-"],
-        input=json.dumps({"query": query, "variables": variables}),
-        text=True,
-        capture_output=True,
-        check=True,
-    )
+def exemplar_titles(metrics: list[dict]) -> dict[tuple[str, str], str]:
+    """Look up GitHub titles for exemplar pull requests that have none stored."""
+    missing: dict[str, set[str]] = defaultdict(set)
+    for metric in metrics:
+        for item in metric.get("exemplars") or []:
+            number = str(item.get("number") or "")
+            if item.get("title") or not item.get("repo") or not number.isdigit():
+                continue
+            missing[str(item["repo"])].add(number)
+    found: dict[tuple[str, str], str] = {}
+    for repo, numbers in missing.items():
+        found.update(_titles_for(repo, sorted(numbers, key=int)))
+    return found
+
+
+def _titles_for(repo: str, numbers: list[str]) -> dict[tuple[str, str], str]:
+    owner, name = repo.split("/", 1)
+    found: dict[tuple[str, str], str] = {}
+    batch = 40
+    for start in range(0, len(numbers), batch):
+        chunk = numbers[start : start + batch]
+        fields = "\n".join(
+            f"n{number}: pullRequest(number: {number}) {{ number title }}" for number in chunk
+        )
+        query = f"""query($owner: String!, $name: String!) {{
+  repository(owner: $owner, name: $name) {{
+    {fields}
+  }}
+}}"""
+        repository = gh_graphql(query, {"owner": owner, "name": name})["repository"]
+        for number in chunk:
+            node = repository.get(f"n{number}") or {}
+            title = " ".join(str(node.get("title") or "").split())
+            if title:
+                found[(repo, str(node.get("number") or number))] = title
+    return found
+
+
+def gh_graphql(query: str, variables: dict, retry_seconds: tuple[int, ...] = GH_RETRY_SECONDS) -> dict:
+    """Run one GraphQL query. A GitHub 5xx response or a network timeout is retried after each listed pause."""
+    payload = json.dumps({"query": query, "variables": variables})
+    for pause in (*retry_seconds, None):
+        completed = subprocess.run(
+            ["gh", "api", "graphql", "--input", "-"],
+            input=payload,
+            text=True,
+            capture_output=True,
+        )
+        if completed.returncode == 0:
+            break
+        detail = completed.stderr.strip().splitlines()[0] if completed.stderr.strip() else ""
+        if pause is None or not _SERVER_ERROR.search(detail):
+            raise RuntimeError(f"gh api graphql failed: {detail or completed.returncode}")
+        time.sleep(pause)
     body = json.loads(completed.stdout)
     if body.get("errors"):
         message = body["errors"][0].get("message", "GraphQL error")
@@ -341,6 +423,7 @@ def rows_from_pull_nodes(nodes: list[dict], repo: str, project: dict) -> tuple[l
                 "closed_at": norm_ts(node.get("closedAt")),
                 "merged_at": norm_ts(node.get("mergedAt")),
                 "draft": bool(node.get("isDraft")),
+                "title": node.get("title") or "",
                 "path": "",
                 "component": "",
                 "closed_by": _closer(node),

@@ -1,0 +1,28 @@
+{
+  "collected_at": "2026-10-26T17:34:32Z",
+  "run_id": "cc37db236729",
+  "sources": {
+    "git": {
+      "records": 2809,
+      "status": "ok"
+    },
+    "github": {
+      "error": "apache/iceberg: Command '['gh', 'api', 'graphql', '--input', '-']' returned non-zero exit status 1.; apache/iceberg-python: Command '['gh', 'api', 'graphql', '--input', '-']' returned non-zero exit status 1.; apache/iceberg-rust: Command '['gh', 'api', 'graphql', '--input', '-']' returned non-zero exit status 1.; apache/iceberg-cpp: Command '['gh', 'api', 'graphql', '--input', '-']' returned non-zero exit status 1.; apache/terraform-provider-iceberg: Command '['gh', 'api', 'graphql', '--input', '-']' returned non-zero exit status 1.",
+      "records": 13604,
+      "status": "partial",
+      "updated_since": "2020-10-01T00:00:00Z"
+    },
+    "ponymail": {
+      "records": 14026,
+      "status": "ok"
+    },
+    "releases": {
+      "records": 40,
+      "status": "ok"
+    },
+    "roster": {
+      "records": 26,
+      "status": "ok"
+    }
+  }
+}

@@ -28,6 +28,9 @@ Headcount metrics do not use that floor.
 | `review_load` | review submissions in the month | Mean submissions per reviewer. |
 | `dev_list_reply_hours` | threads started in the month that received a reply from someone else | Median hours to that reply on dev@iceberg.apache.org. |
 | `unanswered_rate` | threads started in the month | Share with no reply from a different person by `as_of`. |
+| `positive_share` | classified dev-list messages sent in the month | Share whose lexicon score is above zero. The score is the sum of tone-word weights in the subject and the first 2,000 characters of the message's own text, with a word's sign flipped when one of the three words before it is a negation. Messages with no plain text, or stored without a label, are not in the population. |
+| `neutral_share` | classified dev-list messages sent in the month | Share whose lexicon score is zero. |
+| `negative_share` | classified dev-list messages sent in the month | Share whose lexicon score is below zero. |
 | `stable_releases` | stable tags in the trailing 730 days | Release candidates, alphas, betas, snapshots, and previews are excluded. The ecosystem value counts Apache Iceberg Java releases, not the sum of the client repositories. |
 | `time_since_last_release_days` | the newest stable tag at or before `as_of` | One observation. Java tags count only when the version is also listed under https://archive.apache.org/dist/iceberg/. Without that list the tier is `proxy`. |
 

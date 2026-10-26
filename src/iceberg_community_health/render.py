@@ -10,6 +10,8 @@ from pathlib import Path
 from iceberg_community_health.timeutil import previous_month
 
 
+_VIEW_MONTHS = 12
+
 _SECTIONS = (
     (
         "contributors",
@@ -44,7 +46,13 @@ _SECTIONS = (
     (
         "mailing-list",
         "Mailing list",
-        ("dev_list_reply_hours", "unanswered_rate"),
+        (
+            "dev_list_reply_hours",
+            "unanswered_rate",
+            "positive_share",
+            "neutral_share",
+            "negative_share",
+        ),
     ),
     (
         "releases",
@@ -72,6 +80,9 @@ _LABELS = {
     "review_load": "Reviews per reviewer",
     "dev_list_reply_hours": "Median time to a reply",
     "unanswered_rate": "Unanswered threads",
+    "positive_share": "Positive-tone messages",
+    "neutral_share": "Neutral-tone messages",
+    "negative_share": "Negative-tone messages",
     "stable_releases": "Stable releases",
     "time_since_last_release_days": "Days since last stable release",
 }
@@ -80,10 +91,20 @@ _RATES = {
     "first_to_second_retention",
     "stale_pr_rate",
     "unanswered_rate",
+    "positive_share",
+    "neutral_share",
+    "negative_share",
 }
 _HOURS = {"merge_latency_hours", "first_review_hours", "dev_list_reply_hours"}
 _DAYS = {"pr_age_days", "time_since_last_release_days"}
 _INDEXES = {"contributor_hhi", "reviewer_hhi"}
+
+_TONE = (
+    "Share of classified public dev@iceberg.apache.org messages sent in the month whose lexicon score "
+    "is {tone}. The score counts tone words in the subject and the first 2,000 characters of the "
+    "message's own text, after quoted replies and the signature are removed. Messages with no plain "
+    "text are left out. A rough word list, not a judgment of any person and not a health score."
+)
 
 _DEFINITIONS = {
     "active_contributors": "People with at least one commit in the month.",
@@ -104,6 +125,9 @@ _DEFINITIONS = {
     "review_load": "Mean review submissions per reviewer in the month.",
     "dev_list_reply_hours": "Median hours to the first reply from someone else on a dev@iceberg.apache.org thread started in the month.",
     "unanswered_rate": "Share of dev-list threads started in the month that had no reply from a different person by the end of the month.",
+    "positive_share": _TONE.format(tone="positive"),
+    "neutral_share": _TONE.format(tone="neutral"),
+    "negative_share": _TONE.format(tone="negative"),
     "stable_releases": "Stable release tags in the trailing 730 days. Release candidates, alphas, betas, snapshots, and previews are excluded. The ecosystem value is the Apache Iceberg Java release train.",
     "time_since_last_release_days": "Days from the newest stable tag to the end of the month. Java tags count when the version is also listed in the ASF archive.",
 }
@@ -175,6 +199,7 @@ body {
   text-transform: uppercase;
 }
 .page-intro dd { margin: 0; color: var(--fg); }
+.page-intro label { margin-right: 0.7rem; }
 .site-nav {
   display: flex;
   gap: 1rem;
@@ -210,10 +235,118 @@ body {
 }
 .badge--partial { background: var(--warn-bg); color: var(--warn); }
 .badge--failed, .badge--bad { background: var(--bad-bg); color: var(--bad); }
-.scope-switch { display: flex; flex-wrap: wrap; gap: 0.4rem 0.8rem; align-items: baseline; margin: 0.5rem 0 0.25rem; }
+.scope-switch { display: flex; flex-wrap: wrap; gap: 0.4rem 0.8rem; align-items: flex-start; margin: 0.5rem 0 0.25rem; }
 .scope-switch a { color: var(--accent); text-decoration: none; }
 .scope-switch a[aria-current="page"] { color: var(--fg); font-weight: 650; text-decoration: underline; }
 .scope-label { color: var(--muted); font-size: 0.8rem; }
+.module-menu { position: relative; }
+.module-label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent);
+  text-align: left;
+  cursor: pointer;
+}
+.module-choice { padding-left: 0.75rem; color: var(--fg); font-weight: 650; }
+.module-column {
+  display: none;
+  position: absolute;
+  z-index: 3;
+  top: calc(100% - 0.35rem);
+  left: 0;
+  padding-top: 0.55rem;
+  min-width: 9rem;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0.4rem 0.7rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.module-menu:hover .module-column,
+.module-menu:focus-within .module-column { display: flex; }
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+.month-picker {
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.1rem 0.35rem;
+}
+.window-control { display: flex; flex-direction: column; gap: 0.35rem; min-width: 16rem; }
+.window-presets { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.window-presets button {
+  font: inherit;
+  font-size: 0.78rem;
+  color: var(--muted);
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.05rem 0.55rem;
+  cursor: pointer;
+}
+.window-presets button[aria-pressed="true"] { color: var(--fg); border-color: var(--accent); }
+.window-ends { display: flex; flex-wrap: wrap; gap: 0.35rem 0.7rem; }
+.window-slider { position: relative; height: 1.5rem; }
+.window-track {
+  position: absolute;
+  left: 0.45rem;
+  right: 0.45rem;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+  border-radius: 99px;
+  background: var(--line);
+}
+.window-slider input[type="range"] {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 1.5rem;
+  margin: 0;
+  background: transparent;
+  pointer-events: none;
+  appearance: none;
+}
+.window-slider input[type="range"]::-webkit-slider-runnable-track { height: 2px; background: transparent; }
+.window-slider input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  pointer-events: auto;
+  width: 0.9rem;
+  height: 0.9rem;
+  margin-top: -0.4rem;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+  box-shadow: 0 0 0 1px var(--line);
+  cursor: grab;
+}
+.window-slider input[type="range"]::-moz-range-track { background: transparent; border: none; }
+.window-slider input[type="range"]::-moz-range-thumb {
+  pointer-events: auto;
+  width: 0.9rem;
+  height: 0.9rem;
+  border: 2px solid var(--bg);
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: grab;
+}
+#month-compared { color: var(--muted); }
 .spark {
   display: grid;
   grid-template-columns: auto 7.5rem;
@@ -223,6 +356,7 @@ body {
   margin: 0.35rem 0 0;
   color: var(--accent);
 }
+.spark[hidden] { display: none; }
 .spark svg { width: 7.5rem; height: 2rem; display: block; }
 .spark-scale {
   display: flex;
@@ -234,6 +368,18 @@ body {
   font-variant-numeric: tabular-nums;
 }
 .delta { margin: 0.15rem 0 0; color: var(--muted); font-size: 0.9rem; }
+.delta:empty { display: none; }
+.exemplars { margin-top: 0.45rem; }
+.exemplars summary { cursor: pointer; color: var(--accent); font-size: 0.85rem; }
+.exemplars a { color: var(--accent); }
+.exemplar-side {
+  margin: 0.4rem 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.exemplars ul { margin: 0.15rem 0 0.35rem; padding-left: 1.1rem; font-size: 0.85rem; }
 .term { position: relative; border-bottom: 1px dotted var(--muted); cursor: help; }
 .tip {
   display: none;
@@ -371,21 +517,19 @@ def _html(
 ) -> str:
     latest = _latest(report.get("metrics") or [], scope_type, scope_id)
     grouped = _group(list(latest.values()))
+    payload = _month_payload(report.get("metrics") or [], scope_type, scope_id)
+    view_from = _view_start(payload, int(report.get("view_months") or _VIEW_MONTHS))
     sections = []
     for section_id, title, ids in _SECTIONS:
         rows = [latest[metric_id] for metric_id in ids if metric_id in latest]
         if not rows and scope_type != "ecosystem":
             continue
-        sections.append(_section(section_id, title, rows, report.get("metrics") or []))
+        sections.append(_section(section_id, title, rows, report.get("metrics") or [], view_from))
     if grouped["other"]:
-        sections.append(_section("other", "Other", grouped["other"], report.get("metrics") or []))
+        sections.append(_section("other", "Other", grouped["other"], report.get("metrics") or [], view_from))
     extra = ""
     if scope_type == "ecosystem":
-        extra = f"""<section id="follow-up">
-<h2>Follow-up</h2>
-<ul>{_recommendations(report)}</ul>
-</section>
-<section id="exclusions">
+        extra = f"""<section id="exclusions">
 <h2>Exclusions</h2>
 <ul>{_exclusions(report)}</ul>
 </section>
@@ -420,7 +564,7 @@ def _html(
 {nav}
 </nav>
 {_banner(report)}
-{_intro(report, label)}
+{_intro(report, label, payload, view_from)}
 {note}
 <div class="source-badges" aria-label="Per-source data status">{_sources(report)}</div>
 <main id="main" data-scope-type="{_esc(scope_type)}" data-scope-id="{_esc(scope_id)}">
@@ -428,10 +572,11 @@ def _html(
 {extra}
 </main>
 <footer class="site-footer">
-<p class="card-links"><a href="{prefix}metrics.json">JSON</a> · <a href="{prefix}metrics.csv">CSV</a></p>
+<p class="card-links"><a href="{prefix}metrics.json">JSON</a> · <a href="{prefix}metrics.csv">CSV</a> · <a href="https://github.com/RussellSpitzer/iceberg-community-health">GitHub</a></p>
 <p>Run <code>{_esc(report.get("run_id"))}</code></p>
 </footer>
 </div>
+{_month_scripts(payload)}
 </body>
 </html>
 """
@@ -473,20 +618,105 @@ def _human_month(value: object) -> str:
     return f"{_MONTHS[month - 1]} {text[0:4]}"
 
 
-def _intro(report: dict, label: str) -> str:
-    month = _human_month(report.get("window_start"))
-    previous = ""
-    window = str(report.get("window_start") or "")
-    if len(window) >= 7:
-        previous = _human_month(previous_month(window[:7]) + "-01")
-    compared = f"{month}, compared with {previous}" if previous else month
+def _intro(report: dict, label: str, payload: dict, view_from: str) -> str:
     return f"""<dl class="page-intro">
 <div><dt>Scope</dt><dd>{_esc(label)}</dd></div>
 <div><dt>Collected</dt><dd>{_esc(_human_date(report.get("as_of")))}</dd></div>
-<div><dt>Month</dt><dd>{_esc(compared)}</dd></div>
+<div><dt>Window</dt><dd>{_month_control(payload, view_from)}</dd></div>
 <div><dt>Definitions</dt><dd>{_esc(report.get("definition_version"))}</dd></div>
 </dl>
 """
+
+
+_PRESETS = ((12, "1 year"), (36, "3 years"), (72, "6 years"))
+
+
+def _delta_kind(metric_id: str) -> str:
+    if metric_id in _RATES:
+        return "rate"
+    if metric_id in _INDEXES:
+        return "index"
+    if metric_id in _HOURS:
+        return "hours"
+    if metric_id in _DAYS:
+        return "days"
+    return "count"
+
+
+def _month_options(months: list[dict], selected_index: int) -> str:
+    groups = []
+    year = ""
+    options: list[str] = []
+    for index, month in enumerate(months):
+        month_year = month["id"][:4]
+        if month_year != year:
+            if options:
+                groups.append(f'<optgroup label="{year}">{"".join(options)}</optgroup>')
+            year = month_year
+            options = []
+        selected = " selected" if index == selected_index else ""
+        options.append(
+            f'<option value="{_esc(month["id"])}"{selected}>{_esc(month["label"])}</option>'
+        )
+    if options:
+        groups.append(f'<optgroup label="{year}">{"".join(options)}</optgroup>')
+    return "".join(groups)
+
+
+def _view_start(payload: dict, view_months: int) -> str:
+    """The oldest month in the default window: the newest `view_months` months, or every month when fewer exist."""
+    ids = sorted(month["id"] for month in payload.get("months") or [])
+    if not ids:
+        return ""
+    return ids[max(0, len(ids) - view_months)]
+
+
+def _month_control(payload: dict, view_from: str) -> str:
+    months = list(reversed(payload.get("months") or []))
+    if not months:
+        return ""
+    start = next((index for index, month in enumerate(months) if month["id"] == view_from), 0)
+    end = len(months) - 1
+    compared = "" if start == end else f"compared with {months[start]['label']}"
+    span = end - start + 1
+    presets = []
+    for width, label in _PRESETS:
+        if width > len(months):
+            continue
+        pressed = "true" if width == span and end == len(months) - 1 else "false"
+        presets.append(
+            f'<button type="button" data-span="{width}" aria-pressed="{pressed}">{label}</button>'
+        )
+    preset_row = f'<div class="window-presets">{"".join(presets)}</div>' if presets else ""
+    slider = ""
+    if len(months) > 1:
+        maximum = len(months) - 1
+        start_pct = 100 * start / maximum
+        end_pct = 100 * end / maximum
+        track = (
+            f"background:linear-gradient(to right, var(--line) {start_pct:.2f}%, var(--accent) {start_pct:.2f}%, "
+            f"var(--accent) {end_pct:.2f}%, var(--line) {end_pct:.2f}%)"
+        )
+        slider = (
+            '<div class="window-slider">'
+            f'<div class="window-track" id="window-track" style="{track}"></div>'
+            f'<input type="range" id="window-from-range" min="0" max="{maximum}" value="{start}" '
+            f'aria-label="Window start" aria-valuetext="{_esc(months[start]["label"])}">'
+            f'<input type="range" id="window-to-range" min="0" max="{maximum}" value="{end}" '
+            f'aria-label="Window end" aria-valuetext="{_esc(months[end]["label"])}">'
+            "</div>"
+        )
+    return (
+        '<div class="window-control">'
+        f"{preset_row}"
+        '<div class="window-ends">'
+        f'<label>From <select id="window-from" class="month-picker">{_month_options(months, start)}</select></label>'
+        f'<label>To <select id="window-to" class="month-picker">{_month_options(months, end)}</select></label>'
+        "</div>"
+        f"{slider}"
+        f'<span id="month-compared">{_esc(compared)}</span>'
+        "</div>"
+    )
 
 
 def _scope_label(scope_type: str, scope_id: str) -> str:
@@ -506,9 +736,13 @@ def _switcher(
     modules: list[str],
 ) -> str:
     parts = [_scope_link(prefix + "index.html", "Ecosystem", scope_type == "ecosystem" and scope_id == project_id)]
+    iceberg_repo = next((repo for repo in repos if repo.split("/")[-1] == "iceberg"), None)
     if repos:
         parts.append('<span class="scope-label">Projects</span>')
         for repo in repos:
+            if modules and repo == iceberg_repo:
+                parts.append(_module_menu(prefix, scope_type, scope_id, repo, modules))
+                continue
             slug = repo.split("/")[-1]
             parts.append(
                 _scope_link(
@@ -517,17 +751,48 @@ def _switcher(
                     scope_type == "repo" and scope_id == repo,
                 )
             )
-    if modules:
-        parts.append('<span class="scope-label">Modules</span>')
-        for module in modules:
-            parts.append(
-                _scope_link(
-                    f"{prefix}modules/{module}.html",
-                    module,
-                    scope_type == "component" and scope_id == module,
-                )
-            )
+    if modules and iceberg_repo is None:
+        parts.append(_module_menu(prefix, scope_type, scope_id, "apache/iceberg", modules))
     return "".join(parts)
+
+
+def _module_menu(
+    prefix: str,
+    scope_type: str,
+    scope_id: str,
+    repo: str,
+    modules: list[str],
+) -> str:
+    if scope_type == "repo" and scope_id == repo:
+        choice = "repository"
+    elif scope_type == "component" and scope_id in modules:
+        choice = scope_id
+    else:
+        choice = ""
+    choice_html = f'<span class="module-choice">{_esc(choice)}</span>' if choice else ""
+    links = [
+        _scope_link(
+            f"{prefix}projects/iceberg.html",
+            "repository",
+            scope_type == "repo" and scope_id == repo,
+        )
+    ]
+    for module in modules:
+        links.append(
+            _scope_link(
+                f"{prefix}modules/{module}.html",
+                module,
+                scope_type == "component" and scope_id == module,
+            )
+        )
+    return (
+        '<div class="module-menu">'
+        f'<button type="button" class="module-label" aria-haspopup="true">'
+        '<span class="module-name">Iceberg</span>'
+        f"{choice_html}</button>"
+        f'<div class="module-column" role="group" aria-label="Iceberg modules">{"".join(links)}</div>'
+        "</div>"
+    )
 
 
 def _scope_link(href: str, label: str, current: bool) -> str:
@@ -540,8 +805,6 @@ def _section_nav(grouped: dict[str, list[dict]], scope_type: str) -> str:
     for section_id, title, _ids in _SECTIONS:
         if grouped.get(section_id) or scope_type == "ecosystem":
             links.append(f'<a href="#{section_id}">{_esc(title)}</a>')
-    if scope_type == "ecosystem":
-        links.append('<a href="#follow-up">Follow-up</a>')
     return "".join(links)
 
 
@@ -580,8 +843,8 @@ def _series(metrics: list[dict], metric: dict) -> list[dict]:
     return rows
 
 
-def _section(section_id: str, title: str, metrics: list[dict], all_metrics: list[dict]) -> str:
-    cards = "".join(_card(metric, all_metrics) for metric in metrics) or (
+def _section(section_id: str, title: str, metrics: list[dict], all_metrics: list[dict], view_from: str) -> str:
+    cards = "".join(_card(metric, all_metrics, view_from) for metric in metrics) or (
         '<p class="card-empty">No value for this scope.</p>'
     )
     return f"""<section id="{section_id}">
@@ -591,9 +854,10 @@ def _section(section_id: str, title: str, metrics: list[dict], all_metrics: list
 """
 
 
-def _card(metric: dict, all_metrics: list[dict]) -> str:
+def _card(metric: dict, all_metrics: list[dict], view_from: str) -> str:
     metric_id = str(metric.get("metric_id") or "")
     series = _series(all_metrics, metric)
+    shown_series = [row for row in series if _month_key(row) >= view_from]
     shown = _display(metric)
     value_html = (
         f'<span class="value">{_esc(shown)}</span>'
@@ -606,23 +870,60 @@ def _card(metric: dict, all_metrics: list[dict]) -> str:
         f'data-scope="{_esc(metric.get("scope_type"))}" data-value="{_esc(raw)}">'
         f"<h3>{_term(metric_id)}</h3>"
         f'<p class="card-value">{value_html}</p>'
-        f"{_delta(metric, series)}"
-        f"{_sparkline(series)}"
+        f'<p class="delta">{_esc(_delta_text(metric, series, view_from) or "")}</p>'
+        f"{_sparkline(shown_series) or _empty_sparkline(series)}"
+        f"{_exemplar_block(metric, series)}"
         f"{_module_breakdown(metric, all_metrics)}"
         f'<p class="card-meta">n={_esc(metric.get("population_count"))} · {_esc(metric.get("tier"))}</p>'
         "</article>"
     )
 
 
-def _delta(metric: dict, series: list[dict]) -> str:
-    month = metric.get("month")
-    if not month or metric.get("flag") == "insufficient_data" or metric.get("value") is None:
+def _exemplar_block(metric: dict, series: list[dict]) -> str:
+    chosen = list(metric.get("exemplars") or [])
+    if not chosen and not any(row.get("exemplars") for row in series):
         return ""
-    previous = next((row for row in series if row.get("month") == previous_month(str(month))), None)
-    if previous is None or previous.get("flag") == "insufficient_data" or previous.get("value") is None:
-        return ""
-    diff = float(metric["value"]) - float(previous["value"])
-    return f'<p class="delta">{_esc(_format_delta(str(metric.get("metric_id")), diff))}</p>'
+    hidden = "" if chosen else " hidden"
+    return (
+        f'<details class="exemplars"{hidden}>'
+        "<summary>Slowest and fastest</summary>"
+        f"{_exemplar_body(chosen)}"
+        "</details>"
+    )
+
+
+def _exemplar_body(rows: list[dict]) -> str:
+    parts = []
+    for side, title in (("longest", "Longest"), ("fastest", "Fastest")):
+        group = [row for row in rows if row.get("side") == side]
+        if not group:
+            continue
+        items = []
+        for row in group:
+            items.append(
+                "<li>"
+                f'<a href="{_esc(row.get("href"))}">{_esc(row.get("text"))}</a>'
+                "</li>"
+            )
+        parts.append(f'<p class="exemplar-side">{title}</p><ul>{"".join(items)}</ul>')
+    return "".join(parts)
+
+
+def _delta_text(metric: dict, series: list[dict], baseline: str) -> str | None:
+    """Change from the first month of the window to this month."""
+    month = _month_key(metric)
+    if (
+        len(month) < 7
+        or month == baseline
+        or metric.get("flag") == "insufficient_data"
+        or metric.get("value") is None
+    ):
+        return None
+    start = next((row for row in series if _month_key(row) == baseline), None)
+    if start is None or start.get("flag") == "insufficient_data" or start.get("value") is None:
+        return None
+    diff = float(metric["value"]) - float(start["value"])
+    return _format_delta(str(metric.get("metric_id")), diff)
 
 
 def _format_delta(metric_id: str, diff: float) -> str:
@@ -639,6 +940,22 @@ def _format_delta(metric_id: str, diff: float) -> str:
     return f"{diff:+.1f}"
 
 
+def _coarsen_spark(values: list[float | None]) -> list[float | None]:
+    """Monthly through a year and a half. A wider window keeps the last month of each chunk, about twelve points."""
+    if len(values) <= 18:
+        return values
+    size = (len(values) + 11) // 12
+    chosen: list[float | None] = []
+    for start in range(0, len(values), size):
+        picked = None
+        for value in reversed(values[start : start + size]):
+            if value is not None:
+                picked = value
+                break
+        chosen.append(picked)
+    return chosen
+
+
 def _sparkline(series: list[dict]) -> str:
     values: list[float | None] = []
     for row in series:
@@ -646,6 +963,7 @@ def _sparkline(series: list[dict]) -> str:
             values.append(None)
         else:
             values.append(float(row["value"]))
+    values = _coarsen_spark(values)
     present = [(index, value) for index, value in enumerate(values) if value is not None]
     if not present:
         return ""
@@ -697,6 +1015,17 @@ def _sparkline(series: list[dict]) -> str:
     )
 
 
+def _empty_sparkline(series: list[dict]) -> str:
+    """A hidden chart the month picker can fill when a wider window has values."""
+    if not any(row.get("flag") != "insufficient_data" and row.get("value") is not None for row in series):
+        return ""
+    return (
+        '<figure class="spark" hidden>'
+        '<span class="spark-scale" aria-hidden="true"><span></span><span></span></span>'
+        '<svg viewBox="0 0 120 32" role="img"></svg></figure>'
+    )
+
+
 def _term(metric_id: str) -> str:
     label = _LABELS.get(metric_id, metric_id)
     definition = _DEFINITIONS.get(metric_id)
@@ -711,10 +1040,31 @@ def _term(metric_id: str) -> str:
 def _module_breakdown(metric: dict, all_metrics: list[dict]) -> str:
     if metric.get("scope_type") != "repo" or metric.get("scope_id") != "apache/iceberg":
         return ""
+    parts = _module_part_rows(str(metric.get("metric_id") or ""), metric, all_metrics)
+    hidden = "" if parts else " hidden"
+    peak = max((part["value"] for part in parts), default=1) or 1
+    items = []
+    for part in parts:
+        width = max(4, round(100 * part["value"] / peak))
+        items.append(
+            f'<li><span class="part-name">{_esc(part["id"])}</span>'
+            f'<span class="part-bar" style="width:{width}%"></span>'
+            f'<span class="part-value">{_esc(part["display"])}</span></li>'
+        )
+    return (
+        f'<ul class="parts"{hidden}>'
+        + "".join(items)
+        + "</ul>"
+        + f'<p class="scope-note"{hidden}>The repository total counts each change once. '
+        + "The rows are the modules that make up this repository.</p>"
+    )
+
+
+def _module_part_rows(metric_id: str, metric: dict, all_metrics: list[dict]) -> list[dict]:
     month = metric.get("month")
     parts = []
     for row in all_metrics:
-        if row.get("scope_type") != "component" or row.get("metric_id") != metric.get("metric_id"):
+        if row.get("scope_type") != "component" or row.get("metric_id") != metric_id:
             continue
         if str(row.get("scope_id")) in {"cross-cutting", "unclassified"}:
             continue
@@ -725,26 +1075,9 @@ def _module_breakdown(metric: dict, all_metrics: list[dict]) -> str:
         shown = _display(row)
         if shown is None:
             continue
-        parts.append((str(row.get("scope_id")), shown, float(row.get("value") or 0)))
-    if not parts:
-        return ""
-    parts.sort(key=lambda item: (-item[2], item[0]))
-    peak = max(item[2] for item in parts) or 1
-    items = []
-    for name, shown, value in parts:
-        width = max(4, round(100 * value / peak))
-        items.append(
-            f'<li><span class="part-name">{_esc(name)}</span>'
-            f'<span class="part-bar" style="width:{width}%"></span>'
-            f'<span class="part-value">{_esc(shown)}</span></li>'
-        )
-    return (
-        '<ul class="parts">'
-        + "".join(items)
-        + "</ul>"
-        + '<p class="scope-note">The repository total counts each change once. '
-        + "The rows are the modules that make up this repository.</p>"
-    )
+        parts.append({"id": str(row.get("scope_id")), "display": shown, "value": float(row.get("value") or 0)})
+    parts.sort(key=lambda item: (-item["value"], item["id"]))
+    return parts
 
 
 def _display(metric: dict) -> str | None:
@@ -767,6 +1100,395 @@ def _format_value(metric_id: str, value: float) -> str:
     return f"{value:.1f}"
 
 
+def _month_key(row: dict) -> str:
+    month = row.get("month")
+    if month:
+        return str(month)[:7]
+    return str(row.get("window_start") or "")[:7]
+
+
+def _month_payload(metrics: list[dict], scope_type: str, scope_id: str) -> dict:
+    grouped: dict[str, list[dict]] = {}
+    months: set[str] = set()
+    for row in metrics:
+        if row.get("scope_type") != scope_type or str(row.get("scope_id")) != scope_id:
+            continue
+        key = _month_key(row)
+        if len(key) < 7:
+            continue
+        months.add(key)
+        grouped.setdefault(str(row.get("metric_id") or ""), []).append(row)
+    include_parts = scope_type == "repo" and scope_id == "apache/iceberg"
+    payload_metrics = {}
+    for metric_id, rows in grouped.items():
+        by_month = {}
+        for row in rows:
+            key = _month_key(row)
+            point = {
+                "display": _display(row),
+                "value": None if row.get("flag") == "insufficient_data" else row.get("value"),
+                "n": row.get("population_count"),
+                "tier": row.get("tier"),
+                "exemplars": row.get("exemplars") or [],
+            }
+            if include_parts:
+                point["parts"] = _module_part_rows(metric_id, row, metrics)
+            by_month[key] = point
+        payload_metrics[metric_id] = by_month
+    listed = []
+    for key in sorted(months, reverse=True):
+        listed.append(
+            {
+                "id": key,
+                "label": _human_month(key + "-01"),
+                "previous": _human_month(previous_month(key) + "-01"),
+            }
+        )
+    formats = {metric_id: _delta_kind(metric_id) for metric_id in payload_metrics}
+    return {"months": listed, "metrics": payload_metrics, "formats": formats}
+
+
+def _month_scripts(payload: dict) -> str:
+    if not payload.get("months"):
+        return ""
+    text = json.dumps(payload, separators=(",", ":")).replace("<", "\\u003c")
+    return (
+        f'<script id="month-series" type="application/json">{text}</script>\n'
+        f'<script id="month-picker">{_MONTH_PICKER}</script>'
+    )
+
+
+_MONTH_PICKER = """
+(function () {
+  var dataNode = document.getElementById("month-series");
+  var fromSelect = document.getElementById("window-from");
+  var toSelect = document.getElementById("window-to");
+  if (!dataNode || !fromSelect || !toSelect) return;
+  var data = JSON.parse(dataNode.textContent);
+  var compared = document.getElementById("month-compared");
+  var fromRange = document.getElementById("window-from-range");
+  var toRange = document.getElementById("window-to-range");
+  var track = document.getElementById("window-track");
+
+  function monthMeta(id) {
+    for (var i = 0; i < data.months.length; i++) {
+      if (data.months[i].id === id) return data.months[i];
+    }
+    return null;
+  }
+
+  function formatDelta(metricId, diff) {
+    var kind = (data.formats || {})[metricId] || "count";
+    var body;
+    if (kind === "rate") body = (diff * 100).toFixed(1) + " pt";
+    else if (kind === "index") body = diff.toFixed(3);
+    else if (kind === "hours") body = diff.toFixed(1) + " hours";
+    else if (kind === "days") body = diff.toFixed(1) + " days";
+    else if (Math.abs(diff - Math.round(diff)) < 1e-6) body = String(Math.round(diff));
+    else body = diff.toFixed(1);
+    return diff < 0 ? body : "+" + body;
+  }
+
+  function windowDelta(metricId, fromId, toId) {
+    if (fromId === toId) return "";
+    var metric = data.metrics[metricId] || {};
+    var start = metric[fromId];
+    var end = metric[toId];
+    if (!start || !end || start.value == null || end.value == null || start.display == null || end.display == null) return "";
+    return formatDelta(metricId, Number(end.value) - Number(start.value));
+  }
+
+  function apply(fromId, toId) {
+    var start = monthMeta(fromId);
+    var meta = monthMeta(toId);
+    if (!meta) return;
+    if (compared) compared.textContent = fromId === toId || !start ? "" : "compared with " + start.label;
+    document.querySelectorAll("article.card").forEach(function (card) {
+      var metricId = card.getAttribute("data-metric");
+      var metric = data.metrics[metricId] || {};
+      var point = metric[toId];
+      var value = card.querySelector(".value");
+      var delta = card.querySelector(".delta");
+      var metaLine = card.querySelector(".card-meta");
+      if (!point) {
+        if (value) {
+          value.className = "value value--insufficient";
+          value.textContent = "insufficient data";
+        }
+        card.setAttribute("data-value", "");
+        if (delta) delta.textContent = "";
+        fillExemplars(card, []);
+        return;
+      }
+      if (value) {
+        if (point.display == null) {
+          value.className = "value value--insufficient";
+          value.textContent = "insufficient data";
+        } else {
+          value.className = "value";
+          value.textContent = point.display;
+        }
+      }
+      card.setAttribute("data-value", point.value == null ? "" : String(point.value));
+      if (delta) delta.textContent = windowDelta(metricId, fromId, toId);
+      if (metaLine) metaLine.textContent = "n=" + point.n + " · " + point.tier;
+      fillExemplars(card, point.exemplars || []);
+      var list = card.querySelector(".parts");
+      var note = card.querySelector(".scope-note");
+      if (!list) return;
+      list.replaceChildren();
+      var parts = point.parts || [];
+      list.hidden = parts.length === 0;
+      if (note) note.hidden = parts.length === 0;
+      var peak = 0;
+      parts.forEach(function (part) { if (part.value > peak) peak = part.value; });
+      if (!peak) peak = 1;
+      parts.forEach(function (part) {
+        var item = document.createElement("li");
+        var name = document.createElement("span");
+        name.className = "part-name";
+        name.textContent = part.id;
+        var bar = document.createElement("span");
+        bar.className = "part-bar";
+        bar.style.width = Math.max(4, Math.round(100 * part.value / peak)) + "%";
+        var shown = document.createElement("span");
+        shown.className = "part-value";
+        shown.textContent = part.display;
+        item.append(name, bar, shown);
+        list.append(item);
+      });
+    });
+  }
+
+  function fillExemplars(card, exemplars) {
+    var box = card.querySelector(".exemplars");
+    if (!box) return;
+    var summary = box.querySelector("summary");
+    box.replaceChildren(summary);
+    if (!exemplars.length) {
+      box.hidden = true;
+      return;
+    }
+    box.hidden = false;
+    ["longest", "fastest"].forEach(function (side) {
+      var rows = exemplars.filter(function (item) { return item.side === side; });
+      if (!rows.length) return;
+      var heading = document.createElement("p");
+      heading.className = "exemplar-side";
+      heading.textContent = side === "longest" ? "Longest" : "Fastest";
+      var list = document.createElement("ul");
+      rows.forEach(function (item) {
+        var entry = document.createElement("li");
+        var link = document.createElement("a");
+        link.href = item.href;
+        link.textContent = item.text;
+        entry.append(link);
+        list.append(entry);
+      });
+      box.append(heading, list);
+    });
+  }
+
+  function orderedMonths() {
+    return data.months.map(function (month) { return month.id; }).sort();
+  }
+
+  function labelFor(metric, target) {
+    var ids = Object.keys(metric);
+    for (var i = 0; i < ids.length; i++) {
+      var point = metric[ids[i]];
+      if (point && Number(point.value) === target && point.display) return point.display;
+    }
+    return String(target);
+  }
+
+  function redrawSparks(fromId, toId) {
+    document.querySelectorAll("article.card").forEach(function (card) {
+      var metric = data.metrics[card.getAttribute("data-metric")] || {};
+      var figure = card.querySelector("figure.spark");
+      if (!figure) return;
+      var values = [];
+      orderedMonths().forEach(function (month) {
+        if (month < fromId || month > toId) return;
+        var point = metric[month];
+        values.push(point && point.value != null && point.display != null ? Number(point.value) : null);
+      });
+      if (values.length > 18) {
+        var size = Math.ceil(values.length / 12);
+        var coarsened = [];
+        for (var start = 0; start < values.length; start += size) {
+          var picked = null;
+          var end = Math.min(start + size, values.length);
+          for (var i = end - 1; i >= start; i--) {
+            if (values[i] != null) { picked = values[i]; break; }
+          }
+          coarsened.push(picked);
+        }
+        values = coarsened;
+      }
+      var present = [];
+      values.forEach(function (value, index) {
+        if (value != null) present.push({ index: index, value: value });
+      });
+      if (!present.length) {
+        figure.hidden = true;
+        return;
+      }
+      figure.hidden = false;
+      var low = present[0].value;
+      var high = present[0].value;
+      present.forEach(function (point) {
+        if (point.value < low) low = point.value;
+        if (point.value > high) high = point.value;
+      });
+      var width = 120;
+      var height = 32;
+      var span = high - low;
+      function pointAt(index, value) {
+        var x = 4 + (index / Math.max(values.length - 1, 1)) * (width - 8);
+        var y = span === 0 ? height / 2 : 4 + (1 - (value - low) / span) * (height - 8);
+        return [x, y];
+      }
+      var current = [];
+      var segments = [];
+      values.forEach(function (value, index) {
+        if (value == null) {
+          if (current.length >= 2) segments.push(current);
+          current = [];
+          return;
+        }
+        current.push(pointAt(index, value));
+      });
+      if (current.length >= 2) segments.push(current);
+      var lines = segments.map(function (segment) {
+        return '<polyline fill="none" stroke="currentColor" stroke-width="1.5" points="'
+          + segment.map(function (pair) { return pair[0].toFixed(1) + "," + pair[1].toFixed(1); }).join(" ")
+          + '"/>';
+      }).join("");
+      var dots = present.map(function (point) {
+        var pair = pointAt(point.index, point.value);
+        return '<circle cx="' + pair[0].toFixed(1) + '" cy="' + pair[1].toFixed(1) + '" r="1.6"/>';
+      }).join("");
+      var svg = figure.querySelector("svg");
+      if (svg) {
+        svg.innerHTML = lines + dots;
+        var lowLabel = labelFor(metric, low);
+        var highLabel = labelFor(metric, high);
+        svg.setAttribute("aria-label", "Monthly trend from " + lowLabel + " to " + highLabel);
+      }
+      var scale = figure.querySelectorAll(".spark-scale span");
+      if (scale.length === 2) {
+        scale[0].textContent = labelFor(metric, high);
+        scale[1].textContent = labelFor(metric, low);
+      }
+    });
+  }
+
+  function remember(fromId, toId) {
+    var url = new URL(location.href);
+    url.searchParams.set("from", fromId);
+    url.searchParams.set("to", toId);
+    history.replaceState(null, "", url);
+    try {
+      localStorage.setItem("iceberg-health-from", fromId);
+      localStorage.setItem("iceberg-health-to", toId);
+    } catch (error) {}
+    document.querySelectorAll("nav.scope-switch a").forEach(function (link) {
+      var target = new URL(link.getAttribute("href"), location.href);
+      target.searchParams.set("from", fromId);
+      target.searchParams.set("to", toId);
+      link.href = target.pathname + target.search + target.hash;
+    });
+  }
+
+  function paintTrack() {
+    if (!track || !fromRange || !toRange) return;
+    var max = Number(fromRange.max);
+    if (!max) return;
+    var start = Number(fromRange.value) / max * 100;
+    var end = Number(toRange.value) / max * 100;
+    track.style.background = "linear-gradient(to right, var(--line) " + start + "%, var(--accent) " + start + "%, var(--accent) " + end + "%, var(--line) " + end + "%)";
+  }
+
+  function markPresets(fromId, toId) {
+    var full = orderedMonths();
+    var fromIndex = full.indexOf(fromId);
+    var toIndex = full.indexOf(toId);
+    document.querySelectorAll(".window-presets button").forEach(function (button) {
+      var span = Number(button.getAttribute("data-span"));
+      var pressed = toIndex === full.length - 1 && fromIndex === Math.max(0, full.length - span);
+      button.setAttribute("aria-pressed", pressed ? "true" : "false");
+    });
+  }
+
+  function showWindow(fromId, toId, persist) {
+    if (!monthMeta(fromId) || !monthMeta(toId)) return;
+    if (fromId > toId) {
+      var swap = fromId;
+      fromId = toId;
+      toId = swap;
+    }
+    fromSelect.value = fromId;
+    toSelect.value = toId;
+    var full = orderedMonths();
+    if (fromRange && toRange) {
+      fromRange.value = String(full.indexOf(fromId));
+      toRange.value = String(full.indexOf(toId));
+      fromRange.setAttribute("aria-valuetext", monthMeta(fromId).label);
+      toRange.setAttribute("aria-valuetext", monthMeta(toId).label);
+      paintTrack();
+    }
+    markPresets(fromId, toId);
+    apply(fromId, toId);
+    if (redrawn || fromId !== defaultFrom || toId !== defaultTo) {
+      redrawSparks(fromId, toId);
+      redrawn = true;
+    }
+    if (persist) remember(fromId, toId);
+  }
+
+  var defaultFrom = fromSelect.value;
+  var defaultTo = toSelect.value;
+  var redrawn = false;
+
+  var params = new URL(location.href).searchParams;
+  var requestedFrom = params.get("from");
+  var requestedTo = params.get("to");
+  if (!requestedFrom || !requestedTo) {
+    try {
+      requestedFrom = requestedFrom || localStorage.getItem("iceberg-health-from");
+      requestedTo = requestedTo || localStorage.getItem("iceberg-health-to");
+    } catch (error) {}
+  }
+  if (requestedFrom && requestedTo) showWindow(requestedFrom, requestedTo, true);
+  fromSelect.addEventListener("change", function () { showWindow(fromSelect.value, toSelect.value, true); });
+  toSelect.addEventListener("change", function () { showWindow(fromSelect.value, toSelect.value, true); });
+  function onRange(changed) {
+    if (!fromRange || !toRange) return;
+    var full = orderedMonths();
+    var fromIndex = Number(fromRange.value);
+    var toIndex = Number(toRange.value);
+    if (fromIndex > toIndex) {
+      if (changed === "from") fromIndex = toIndex;
+      else toIndex = fromIndex;
+      fromRange.value = String(fromIndex);
+      toRange.value = String(toIndex);
+    }
+    showWindow(full[fromIndex], full[toIndex], true);
+  }
+  if (fromRange) fromRange.addEventListener("input", function () { onRange("from"); });
+  if (toRange) toRange.addEventListener("input", function () { onRange("to"); });
+  document.querySelectorAll(".window-presets button").forEach(function (button) {
+    button.addEventListener("click", function () {
+      var full = orderedMonths();
+      var span = Number(button.getAttribute("data-span"));
+      showWindow(full[Math.max(0, full.length - span)], full[full.length - 1], true);
+    });
+  });
+})();
+"""
+
+
 def _sources(report: dict) -> str:
     sources = report.get("sources") or {}
     if not sources:
@@ -779,22 +1501,6 @@ def _sources(report: dict) -> str:
         css = "badge badge--source" if status == "ok" else f"badge badge--source badge--{kind}"
         badges.append(f'<span class="{css}">{_esc(name)}: {_esc(labels.get(status, status))}</span>')
     return "".join(badges)
-
-
-def _recommendations(report: dict) -> str:
-    items = report.get("recommendations") or []
-    if not items:
-        return "<li>No configured threshold was crossed by an ecosystem metric with enough data.</li>"
-    return "".join(
-        "<li><strong>"
-        + _esc(item.get("metric_id"))
-        + "</strong> "
-        + _esc(item.get("summary"))
-        + " Suggested follow-up: "
-        + _esc(item.get("follow_up"))
-        + "</li>"
-        for item in items
-    )
 
 
 def _exclusions(report: dict) -> str:

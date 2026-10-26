@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
 
+from iceberg_community_health import collectors
 from iceberg_community_health.collectors import (
     Source,
     parse_archive_html,
@@ -22,7 +24,7 @@ from iceberg_community_health.collectors import (
 )
 from iceberg_community_health.components import classify_change, classify_path, load_rules
 from iceberg_community_health.config import canonical_email, canonical_login, load_project
-from iceberg_community_health.metrics import compute
+from iceberg_community_health.metrics import apply_exemplar_titles, compute
 from iceberg_community_health.pipeline import (
     annotate,
     load_fixture,
@@ -32,7 +34,14 @@ from iceberg_community_health.pipeline import (
 )
 from iceberg_community_health.render import write_report
 from iceberg_community_health.storage import Store
-from iceberg_community_health.live import apache_remote_name
+from iceberg_community_health import sentiment
+from iceberg_community_health.live import (
+    apache_remote_name,
+    git_since,
+    github_coverage,
+    github_updated_since,
+    mail_months,
+)
 from iceberg_community_health.timeutil import completed_month, days_between, month_ends
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -407,6 +416,236 @@ def test_stale_bot_closures_are_separate_from_committer_closures(project):
     assert _metric(report, "pr_closures")["value"] == 4
     assert _metric(report, "pr_closed_by_stale_bot")["value"] == 1
     assert _metric(report, "pr_closed_by_committer")["value"] == 2
+
+
+def test_merge_exemplars_name_the_pull_request_and_its_duration(project):
+    pulls = []
+    titles = {
+        1: "Fix the clock",
+        2: "Add a reader",
+        3: "Drop a copy",
+        4: "Scan manifests",
+        5: "Rewrite deletes",
+        6: "Read total bytes",
+        7: "Skip a file",
+    }
+    spans = {1: 1, 2: 2, 3: 3, 4: 10, 5: 15, 6: 20}
+    for number, days in spans.items():
+        merged = f"2026-09-{1 + days:02d}T00:00:00Z"
+        pulls.append(
+            {
+                "repo": "apache/iceberg",
+                "number": number,
+                "author": "ada",
+                "title": titles[number],
+                "created_at": "2026-09-01T00:00:00Z",
+                "merged_at": merged,
+                "closed_at": merged,
+                "draft": False,
+            }
+        )
+    pulls.append(
+        {
+            "repo": "apache/iceberg",
+            "number": 7,
+            "author": "ada",
+            "title": titles[7],
+            "created_at": "2026-09-10T00:00:00Z",
+            "merged_at": "2026-09-11T12:00:00Z",
+            "closed_at": "2026-09-11T12:00:00Z",
+            "draft": False,
+        }
+    )
+    report = compute({"prs": pulls}, project, AS_OF)
+    exemplars = _metric(report, "merge_latency_hours")["exemplars"]
+    longest = [row["text"] for row in exemplars if row["side"] == "longest"]
+    fastest = [row["text"] for row in exemplars if row["side"] == "fastest"]
+    assert longest == [
+        "PR #6 - Read total bytes - 20 days",
+        "PR #5 - Rewrite deletes - 15 days",
+        "PR #4 - Scan manifests - 10 days",
+    ]
+    assert fastest == [
+        "PR #1 - Fix the clock - 1 day",
+        "PR #7 - Skip a file - 1.5 days",
+        "PR #2 - Add a reader - 2 days",
+    ]
+    assert exemplars[0]["href"] == "https://github.com/apache/iceberg/pull/6"
+
+
+def test_missing_exemplar_titles_can_be_filled_later():
+    metrics = [
+        {
+            "exemplars": [
+                {
+                    "side": "longest",
+                    "repo": "apache/iceberg",
+                    "number": "6",
+                    "title": "",
+                    "value": "20 days",
+                    "href": "https://github.com/apache/iceberg/pull/6",
+                    "text": "PR #6 - 20 days",
+                }
+            ]
+        }
+    ]
+    apply_exemplar_titles(metrics, {("apache/iceberg", "6"): "Read total bytes"})
+    assert metrics[0]["exemplars"][0]["text"] == "PR #6 - Read total bytes - 20 days"
+
+
+def test_rows_are_stored_in_the_month_they_happened(tmp_path):
+    store = Store(tmp_path, "iceberg")
+    store.append(
+        "git",
+        "commits",
+        [
+            {"repo": "apache/iceberg", "sha": "aaa", "committed_at": "2026-08-02T00:00:00Z", "path": "a"},
+            {"repo": "apache/iceberg", "sha": "bbb", "committed_at": "2026-09-02T00:00:00Z", "path": "b"},
+        ],
+        "run1",
+        "2026-10-23T00:00:00Z",
+    )
+    assert {path.parent.name for path in store.files("commits")} == {"month=2026-08", "month=2026-09"}
+    assert store.event_months("commits") == {"2026-08", "2026-09"}
+    assert {row["sha"] for row in store.read("commits")} == {"aaa", "bbb"}
+
+
+def test_later_collect_skips_completed_months():
+    assert git_since(False, "2026-10-23T00:00:00Z") is None
+    assert git_since(True, "2026-10-23T00:00:00Z") == "2026-10-01T00:00:00Z"
+    covered = github_updated_since(True, "2026-10-23T00:00:00Z", "2020-10-01T00:00:00Z", "2020-10-01T00:00:00Z")
+    assert covered == "2026-10-23T00:00:00Z"
+    assert github_updated_since(False, None, "2020-10-01T00:00:00Z", None) == "2020-10-01T00:00:00Z"
+    starts = ["2026-08-01T00:00:00Z", "2026-09-01T00:00:00Z", "2026-10-01T00:00:00Z"]
+    assert mail_months(starts, {"2026-08", "2026-09"}, "2026-10") == ["2026-10-01T00:00:00Z"]
+    assert mail_months(starts, {"2026-08"}, "2026-10") == ["2026-09-01T00:00:00Z", "2026-10-01T00:00:00Z"]
+
+
+def test_github_walks_back_until_the_store_covers_the_history_window():
+    watermark = "2026-10-23T23:25:16Z"
+    history_start = "2020-10-01T00:00:00Z"
+    assert github_updated_since(True, watermark, history_start, None) == history_start
+    assert github_updated_since(True, watermark, history_start, "2025-10-01T00:00:00Z") == history_start
+    assert github_coverage(None, history_start) == history_start
+    assert github_coverage("2025-10-01T00:00:00Z", history_start) == history_start
+    assert github_coverage(history_start, watermark) == history_start
+
+
+def test_stored_mail_without_tone_labels_is_downloaded_again(tmp_path):
+    store = Store(tmp_path, "iceberg")
+    old = {"list_name": "dev", "message_id": "<a@x>", "thread_id": "<a@x>", "sender": "a@x", "sent_at": "2026-08-02T00:00:00Z"}
+    store.append("ponymail", "messages", [old], "run1", "2026-09-01T00:00:00Z")
+    assert store.event_months("messages", labeled="sentiment") == set()
+    store.append("ponymail", "messages", [{**old, "sentiment": "positive"}], "run2", "2026-10-23T00:00:00Z")
+    assert store.event_months("messages", labeled="sentiment") == {"2026-08"}
+    assert [row["sentiment"] for row in store.read("messages")] == ["positive"]
+
+
+def test_tone_labels_follow_obvious_public_sentences():
+    assert sentiment.label("Re: [VOTE] Release 1.9.0", "Thanks for driving this release, great work!") == "positive"
+    bug = "When I run a Spark job with a filter on a partition column the scan throws a NullPointerException."
+    assert sentiment.label("Scan fails on partition filter", bug) == "neutral"
+    harsh = "This is ridiculous. The release process is a waste of time and the docs are useless."
+    assert sentiment.label("Release process", harsh) == "negative"
+    assert sentiment.label("", "This is not bad at all.") == "positive"
+    assert sentiment.label("", "") is None
+
+
+def test_tone_ignores_quoted_text_and_sign_offs():
+    body = "Here is the schedule for the sync.\n\nThanks,\nRussell\n\nOn Mon, A wrote:\n> This is terrible and useless.\n"
+    assert sentiment.label("Community sync", body) == "neutral"
+    wrapped = "Moving the sync to Tuesday.\n\nOn Tue, Aug 4, 2026 at 1:01 PM Someone <\nsomeone@example.com> wrote:\n"
+    assert sentiment.clean_body(wrapped) == "Moving the sync to Tuesday."
+
+
+def test_negation_stops_at_the_end_of_a_sentence():
+    assert sentiment.label("", "The guidance says no marketing. +1") == "positive"
+
+
+def test_mbox_rows_carry_a_tone_label_and_skip_non_text(project):
+    mbox = """From someone@example.com Tue Sep  1 00:00:00 2026
+From: A <a@example.com>
+Date: Tue, 01 Sep 2026 00:00:00 +0000
+Message-ID: <root@example.com>
+Subject: Congratulations to the new committers
+
+Welcome aboard, excellent work everyone.
+
+From someone@example.com Tue Sep  1 02:00:00 2026
+From: B <b@example.com>
+Date: Tue, 01 Sep 2026 02:00:00 +0000
+Message-ID: <html@example.com>
+Content-Type: text/html
+Subject: Re: Congratulations
+
+<p>Great</p>
+"""
+    rows = parse_mbox(mbox, "dev", project)
+    assert [row["sentiment"] for row in rows] == ["positive", None]
+
+
+def test_tone_shares_count_only_labeled_messages(project):
+    labels = ["positive"] * 3 + ["neutral"] * 2 + ["negative"] + [None] * 4
+    messages = [
+        {
+            "list_name": "dev",
+            "message_id": f"<m{index}@x>",
+            "thread_id": f"<m{index}@x>",
+            "sender": f"p{index}@example.com",
+            "sent_at": "2026-09-02T00:00:00Z",
+            "sentiment": label,
+        }
+        for index, label in enumerate(labels)
+    ]
+    report = compute({"messages": messages}, project, AS_OF)
+    positive = _metric(report, "positive_share")
+    assert positive["population_count"] == 6
+    assert positive["value"] == round(3 / 6, 6)
+    assert _metric(report, "neutral_share")["value"] == round(2 / 6, 6)
+    assert _metric(report, "negative_share")["value"] == round(1 / 6, 6)
+
+
+def test_tone_shares_below_the_floor_are_withheld(project):
+    messages = [
+        {
+            "list_name": "dev",
+            "message_id": f"<m{index}@x>",
+            "thread_id": f"<m{index}@x>",
+            "sender": "a@example.com",
+            "sent_at": "2026-09-02T00:00:00Z",
+            "sentiment": "positive",
+        }
+        for index in range(4)
+    ]
+    report = compute({"messages": messages}, project, AS_OF)
+    positive = _metric(report, "positive_share")
+    assert positive["flag"] == "insufficient_data"
+    assert positive["value"] is None
+    assert positive["population_count"] == 4
+
+
+def test_github_server_errors_are_retried_and_other_errors_are_not(monkeypatch):
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        if len(calls) == 1:
+            return subprocess.CompletedProcess(command, 1, "", "gh: HTTP 504\n<html>")
+        if len(calls) == 2:
+            return subprocess.CompletedProcess(command, 1, "", "net/http: TLS handshake timeout")
+        return subprocess.CompletedProcess(command, 0, '{"data": {"ok": true}}', "")
+
+    monkeypatch.setattr(collectors.subprocess, "run", fake_run)
+    assert collectors.gh_graphql("query", {}, retry_seconds=(0, 0)) == {"ok": True}
+    assert len(calls) == 3
+
+    monkeypatch.setattr(
+        collectors.subprocess,
+        "run",
+        lambda command, **kwargs: subprocess.CompletedProcess(command, 1, "", "gh: Bad credentials (HTTP 401)"),
+    )
+    with pytest.raises(RuntimeError, match="HTTP 401"):
+        collectors.gh_graphql("query", {}, retry_seconds=(0,))
 
 
 def test_month_ends_cover_twelve_completed_months():

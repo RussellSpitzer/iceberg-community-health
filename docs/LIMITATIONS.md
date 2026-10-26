@@ -38,7 +38,18 @@ manifest records `failed`, and metrics that depend on that source are marked
 `tier: proxy` until a later run succeeds. A proxy value is the previous data,
 not a fresh measurement.
 
-This repository does not publish a sentiment measure or a single health score.
+The three tone shares (`positive_share`, `neutral_share`, `negative_share`)
+come from a rough word list in this repository applied to public
+dev@iceberg.apache.org text: the subject and the first 2,000 characters of the
+message's own words, after quoted replies, attribution lines, sign-offs, and
+the signature are dropped. It is not a validated sentiment model. It misreads
+sarcasm, technical words, and non-English mail. It is not a judgment of any
+person, and it is not a health score. Message bodies are not stored; each
+message row keeps only its label. Messages with no plain text are left out of
+the shares rather than counted as neutral, and so are rows stored before
+labels existed.
+
+This repository does not publish a single health score.
 Thresholds in the dashboard are suggestions for a person to run an existing
 read-only Magpie command. Nothing in the report posts a comment, requests a
 reviewer, or publishes the page.
@@ -46,11 +57,23 @@ reviewer, or publishes the page.
 The history behind a report is the Parquet store committed at
 `data/projects/iceberg/`. GitHub Pages serves the rendered HTML, JSON, and CSV
 committed at `site/output/`. It does not recompute the report, and it does not
-serve the Parquet files. A collect appends to that store. Pull-request rows are
-the open pull requests plus pull requests updated on or after the start of the
-history window (October 2025 for a 12-month report collected in October 2026).
-A pull request closed before that window and never updated again is absent.
-Commit history is the full history of Apache `main`. The collector fetches
+serve the Parquet files. A collect appends to that store, partitioned by the month of the event.
+The store keeps 72 completed months (October 2020 through September 2026 for a
+collect in October 2026). The page opens on the last 12 of them. The 1-year,
+3-year, and 6-year choices, the range slider, and the From and To menus all
+set that same window. The change on a card is the newest month in the window
+minus the first month in the window. A sparkline stays monthly through 18
+months. A wider window draws about twelve points, each the last month of its stretch.
+A later collect does not download completed months again. It reads git history
+from the start of the still-open month, mail only for months not already
+stored with tone labels plus the open month, and pull requests updated since
+the previous collect. The GitHub state records `coverage_start`, the earliest
+update time the stored pull requests are complete from. Until that reaches the
+start of the history window, a collect walks every pull request updated on or
+after the window start, plus the open pull requests, and re-reads the recent
+ones it already has. A pull request closed before the window start and never
+updated again is absent.
+Commit history is the full history of Apache `main`, kept from the first collect. The collector fetches
 the remote whose URL is `apache/<repository>`, preferring `upstream` and
 `apache` over `origin`. When the checkout has no Apache remote, it fetches
 `https://github.com/apache/<repository>.git` directly. A personal fork is

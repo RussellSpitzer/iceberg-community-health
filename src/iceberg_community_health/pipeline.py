@@ -86,6 +86,7 @@ def report_from_store(store: Store, project: dict, as_of: str, manifest: dict) -
         combined.extend(month_report["metrics"])
         report = month_report
     report["metrics"] = combined
+    report["view_months"] = int(project["metrics"].get("view_months") or count)
     report["as_of"] = as_of
     report["sources"] = manifest.get("sources") or {}
     report["run_id"] = manifest.get("run_id")
