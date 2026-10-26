@@ -526307,9 +526307,8 @@
       "status": "ok"
     },
     "github": {
-      "error": "apache/iceberg-go: gh api graphql failed: Post \"https://api.github.com/graphql\": net/http: TLS handshake timeout",
       "records": 216501,
-      "status": "partial",
+      "status": "ok",
       "updated_since": "2020-10-01T00:00:00Z"
     },
     "ponymail": {

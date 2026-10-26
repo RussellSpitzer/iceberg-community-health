@@ -346,7 +346,6 @@ body {
   background: var(--accent);
   cursor: grab;
 }
-#month-compared { color: var(--muted); }
 .spark {
   display: grid;
   grid-template-columns: auto 7.5rem;
@@ -677,7 +676,6 @@ def _month_control(payload: dict, view_from: str) -> str:
         return ""
     start = next((index for index, month in enumerate(months) if month["id"] == view_from), 0)
     end = len(months) - 1
-    compared = "" if start == end else f"compared with {months[start]['label']}"
     span = end - start + 1
     presets = []
     for width, label in _PRESETS:
@@ -714,7 +712,6 @@ def _month_control(payload: dict, view_from: str) -> str:
         f'<label>To <select id="window-to" class="month-picker">{_month_options(months, end)}</select></label>'
         "</div>"
         f"{slider}"
-        f'<span id="month-compared">{_esc(compared)}</span>'
         "</div>"
     )
 
@@ -1165,7 +1162,6 @@ _MONTH_PICKER = """
   var toSelect = document.getElementById("window-to");
   if (!dataNode || !fromSelect || !toSelect) return;
   var data = JSON.parse(dataNode.textContent);
-  var compared = document.getElementById("month-compared");
   var fromRange = document.getElementById("window-from-range");
   var toRange = document.getElementById("window-to-range");
   var track = document.getElementById("window-track");
@@ -1199,10 +1195,7 @@ _MONTH_PICKER = """
   }
 
   function apply(fromId, toId) {
-    var start = monthMeta(fromId);
-    var meta = monthMeta(toId);
-    if (!meta) return;
-    if (compared) compared.textContent = fromId === toId || !start ? "" : "compared with " + start.label;
+    if (!monthMeta(toId)) return;
     document.querySelectorAll("article.card").forEach(function (card) {
       var metricId = card.getAttribute("data-metric");
       var metric = data.metrics[metricId] || {};

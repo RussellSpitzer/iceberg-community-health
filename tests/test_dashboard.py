@@ -359,7 +359,7 @@ def test_month_picker_carries_every_completed_month(tmp_path):
     payload = json.loads(html.split('id="month-series" type="application/json">', 1)[1].split("</script>", 1)[0])
     assert payload["metrics"]["pr_backlog"]["2026-08"]["display"] == "4"
     assert payload["metrics"]["stale_pr_rate"]["2026-09"]["display"] == "23.2%"
-    assert "compared with August 2026" in html
+    assert "compared with" not in html
     backlog = html.split('data-metric="pr_backlog"', 1)[1].split("</article>", 1)[0]
     assert '<p class="delta">+5</p>' in backlog
     rate = html.split('data-metric="stale_pr_rate"', 1)[1].split("</article>", 1)[0]
@@ -395,7 +395,7 @@ def test_page_opens_on_the_last_year_and_keeps_every_month(tmp_path):
     card_value = html.split('data-metric="pr_backlog"', 1)[1].split("</article>", 1)[0]
     assert '<span class="value">71</span>' in card_value
     assert '<p class="delta">+11</p>' in card_value
-    assert "compared with October 2025" in html
+    assert "compared with" not in html
     assert 'data-span="12" aria-pressed="true"' in html
     assert 'data-span="36"' in html
     assert 'data-span="72"' in html
@@ -509,7 +509,7 @@ def test_header_uses_calendar_dates(tmp_path):
     text = " ".join(page.text)
     assert "15 October 2026" in text
     assert "September 2026" in text
-    assert '<span id="month-compared"></span>' in html
+    assert "compared with" not in html
     assert 'id="window-from"' in html
     assert 'id="window-to"' in html
     assert "T00:00:00Z" not in html
