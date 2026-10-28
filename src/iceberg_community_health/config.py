@@ -21,6 +21,8 @@ def load_project(root: Path | None = None) -> dict:
     identity = yaml.safe_load((root / "config" / "iceberg" / "identity.yaml").read_text()) or {}
     overrides = identity.get("overrides") or {}
     project["identity_overrides"] = {key.lower(): value for key, value in overrides.items()}
+    access = yaml.safe_load((root / "config" / "iceberg" / "write-access.yaml").read_text()) or {}
+    project["write_logins"] = {str(login).strip().lower() for login in access.get("logins") or [] if str(login).strip()}
     project["root"] = str(root)
     return project
 

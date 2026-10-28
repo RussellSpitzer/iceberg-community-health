@@ -10,7 +10,7 @@ the report. GitHub private addresses at `users.noreply.github.com` are kept.
 Two of those addresses for the same person still count as two people until an
 identity override says otherwise.
 
-Draft pull requests are omitted from the pull-request metrics. A pull request
+Draft pull requests are omitted from the pull-request metrics. `stale_community_approvals` treats the GitHub logins in `config/iceberg/write-access.yaml` as having write access on every project repository. The file stores logins only. When the public project roster lists more people than that file, the page reports the two counts and does not name anyone. A roster entry with no GitHub login cannot be matched, so an approval from that person is not treated as write access. The list is current, not a history of when write access started or ended. A pull request
 closed by `github-actions` without a merge is counted as a stale-bot close.
 A merge, or a close by any other person, is a committer close. Other bots are
 in the closure total only. The first-review
@@ -50,9 +50,7 @@ the shares rather than counted as neutral, and so are rows stored before
 labels existed.
 
 This repository does not publish a single health score.
-Thresholds in the dashboard are suggestions for a person to run an existing
-read-only Magpie command. Nothing in the report posts a comment, requests a
-reviewer, or publishes the page.
+Nothing in the report posts a comment, requests a reviewer, or publishes the page.
 
 The history behind a report is the Parquet store committed at
 `data/projects/iceberg/`. GitHub Pages serves the rendered HTML, JSON, and CSV

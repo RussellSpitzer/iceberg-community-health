@@ -278,6 +278,25 @@ def parse_roster(payload: dict, committee: str) -> list[dict]:
     return [row for row in rows if row["identity"]]
 
 
+def member_count(payload: dict, committee: str) -> int | None:
+    """How many people the public project record lists, or None when that project is absent."""
+    project = (payload.get("projects") or {}).get(committee) or {}
+    members = project.get("members")
+    if isinstance(members, list):
+        return len(members)
+    return None
+
+
+def login_list_notice(member_count: int | None, login_count: int) -> str | None:
+    """A maintainer note when the roster lists more people than the stored GitHub logins."""
+    if member_count is None or member_count <= login_count:
+        return None
+    return (
+        f"The ASF roster lists {member_count} people and the stored GitHub login list has {login_count}. "
+        "Add the new logins to config/iceberg/write-access.yaml."
+    )
+
+
 def parse_archive_html(html: str, repo: str) -> list[dict]:
     rows = []
     seen = set()

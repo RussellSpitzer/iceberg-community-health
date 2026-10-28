@@ -3,8 +3,8 @@
 The first version stops at the metrics in [METRICS.md](METRICS.md). The following
 are intentionally not calculated yet.
 
-- Conversation classification. Dev-list reply time is measured. Topic and tone
-  labels are not, and they need a reviewed codebook before they are published.
+- Conversation classification. Dev-list reply time is measured, and the three
+  tone shares are a rough word list. Topic labels are not published.
 - CI flake trends. Check runs can be collected later. A flake rate needs a
   stable definition of retry versus failure.
 - Bus factor and file ownership. The current contributor index is repository

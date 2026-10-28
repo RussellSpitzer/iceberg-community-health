@@ -11,6 +11,8 @@ from iceberg_community_health.collectors import (
     collect_pulls,
     http_json,
     http_text,
+    login_list_notice,
+    member_count,
     parse_archive_html,
     parse_git_tags,
     parse_mbox,
@@ -116,6 +118,12 @@ def collect_records(project: dict, as_of: str, store=None) -> tuple[dict[str, li
         sources["roster"] = {"status": "ok", "records": len(records["roster"])}
     except Exception as exc:
         sources["roster"] = {"status": "failed", "error": str(exc), "records": 0}
+
+    notice = _login_notice(project)
+    if notice:
+        sources.setdefault("roster", {"status": "failed", "records": 0})
+        sources["roster"]["notice"] = notice
+        _log(notice)
 
     return records, sources
 
@@ -275,6 +283,19 @@ def _status(errors: list[str], records: int) -> dict:
     if errors:
         return {"status": "failed", "records": 0, "error": "; ".join(errors)}
     return {"status": "ok", "records": records}
+
+
+def _login_notice(project: dict) -> str | None:
+    url = (project.get("asf") or {}).get("members_url")
+    if not url:
+        return None
+    try:
+        payload = http_json(url, timeout=60)
+    except Exception as exc:
+        _log(f"roster size check failed: {exc}")
+        return None
+    counted = member_count(payload, project["asf"]["committee"])
+    return login_list_notice(counted, len(project.get("write_logins") or ()))
 
 
 def _log(message: str) -> None:

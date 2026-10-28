@@ -11,6 +11,8 @@ import pytest
 from iceberg_community_health import collectors
 from iceberg_community_health.collectors import (
     Source,
+    login_list_notice,
+    member_count,
     parse_archive_html,
     parse_git_log,
     parse_git_tags,
@@ -165,6 +167,13 @@ def test_parsers_normalize_public_payloads(project):
         "iceberg",
     )
     assert roster == [{"identity": "ada", "name": "Ada", "role": "member"}]
+    assert member_count({"projects": {"iceberg": {"members": ["a", "b"]}}}, "iceberg") == 2
+    assert member_count({}, "iceberg") is None
+    assert login_list_notice(42, 40) == (
+        "The ASF roster lists 42 people and the stored GitHub login list has 40. "
+        "Add the new logins to config/iceberg/write-access.yaml."
+    )
+    assert login_list_notice(40, 40) is None
     tags = parse_git_tags("2026-06-01T00:00:00+00:00\tapache-iceberg-1.5.0\n", "apache/iceberg")
     assert tags[0]["source"] == "git-tag"
     mbox = """From someone@example.com Tue Sep  1 00:00:00 2026
@@ -250,6 +259,99 @@ def test_fixture_metrics(project):
     assert "score" not in report
 
 
+    assert "score" not in report
+
+
+def test_write_access_list_is_github_logins_only(project):
+    logins = project["write_logins"]
+    assert "rdblue" in logins
+    assert "blue" not in logins
+    assert "bryanck" in logins
+    assert "findepi" in logins
+    assert "sdd" in logins
+    assert all(login == login.lower() and " " not in login for login in logins)
+    assert "blackmwk" in logins
+
+
+def test_stale_community_approvals_exclude_writer_approvals(project):
+    def pull(number, repo, created, **extra):
+        row = {
+            "repo": repo,
+            "number": number,
+            "author": "author",
+            "created_at": created,
+            "closed_at": None,
+            "merged_at": None,
+            "draft": "false",
+            "component": "core-api-data",
+            "title": f"Pull {number}",
+        }
+        row.update(extra)
+        return row
+
+    def review(number, repo, reviewer, submitted, state):
+        return {
+            "repo": repo,
+            "number": number,
+            "reviewer": reviewer,
+            "submitted_at": submitted,
+            "state": state,
+        }
+
+    configured = dict(project)
+    configured["write_logins"] = {"committer"}
+    report = compute(
+        {
+            "prs": [
+                pull("1", "apache/iceberg", "2026-08-01T00:00:00Z", component="spark"),
+                pull("2", "apache/iceberg", "2026-08-01T00:00:00Z"),
+                pull("3", "apache/iceberg", "2026-10-01T00:00:00Z"),
+                pull("4", "apache/iceberg", "2026-08-01T00:00:00Z"),
+                pull("5", "apache/iceberg", "2026-08-01T00:00:00Z"),
+                pull("6", "apache/iceberg", "2026-08-01T00:00:00Z"),
+                pull("7", "apache/iceberg", "2026-08-01T00:00:00Z"),
+                pull("8", "apache/iceberg", "2026-08-01T00:00:00Z", draft="true"),
+                pull(
+                    "9",
+                    "apache/iceberg",
+                    "2026-07-01T00:00:00Z",
+                    closed_at="2026-07-02T00:00:00Z",
+                    merged_at="2026-07-02T00:00:00Z",
+                    closed_by="Committer",
+                ),
+                pull("11", "apache/iceberg-python", "2026-08-01T00:00:00Z", component="python"),
+                pull("12", "apache/iceberg", "2026-08-01T00:00:00Z"),
+                pull("13", "apache/iceberg", "2026-08-01T00:00:00Z"),
+            ],
+            "reviews": [
+                review("1", "apache/iceberg", "contributor", "2026-08-02T00:00:00Z", "APPROVED"),
+                review("2", "apache/iceberg", "committer", "2026-08-02T00:00:00Z", "APPROVED"),
+                review("3", "apache/iceberg", "contributor", "2026-10-02T00:00:00Z", "APPROVED"),
+                review("4", "apache/iceberg", "contributor", "2026-08-02T00:00:00Z", "COMMENTED"),
+                review("5", "apache/iceberg", "contributor", "2026-08-02T00:00:00Z", "APPROVED"),
+                review("5", "apache/iceberg", "committer", "2026-08-03T00:00:00Z", "APPROVED"),
+                review("6", "apache/iceberg", "committer", "2026-08-02T00:00:00Z", "APPROVED"),
+                review("6", "apache/iceberg", "committer", "2026-08-04T00:00:00Z", "CHANGES_REQUESTED"),
+                review("6", "apache/iceberg", "contributor", "2026-08-03T00:00:00Z", "APPROVED"),
+                review("7", "apache/iceberg", "contributor", "2026-08-02T00:00:00Z", "APPROVED"),
+                review("7", "apache/iceberg", "contributor", "2026-08-05T00:00:00Z", "DISMISSED"),
+                review("8", "apache/iceberg", "contributor", "2026-08-02T00:00:00Z", "APPROVED"),
+                review("11", "apache/iceberg-python", "contributor", "2026-08-02T00:00:00Z", "APPROVED"),
+                review("12", "apache/iceberg", "contributor", "2026-10-20T00:00:00Z", "APPROVED"),
+                review("13", "apache/iceberg", "former", "2026-08-02T00:00:00Z", "APPROVED"),
+            ],
+        },
+        configured,
+        AS_OF,
+    )
+    assert _metric(report, "stale_community_approvals")["value"] == 4
+    assert _metric(report, "stale_community_approvals", "repo", "apache/iceberg")["value"] == 3
+    assert _metric(report, "stale_community_approvals", "repo", "apache/iceberg-python")["value"] == 1
+    assert _metric(report, "stale_community_approvals", "component", "spark")["value"] == 1
+    numbers = {item["number"] for item in _metric(report, "stale_community_approvals")["exemplars"]}
+    assert numbers == {"1", "6", "11", "13"}
+
+
 def test_concentration_below_the_floor_is_withheld(project):
     commits = [
         {
@@ -298,7 +400,7 @@ def test_offline_dashboard_has_no_composite_score(tmp_path, project):
     assert "score" not in payload
     html = (tmp_path / "index.html").read_text()
     assert "contributor_hhi" in html
-    assert "does not combine them into a score" in html
+    assert "does not combine them into a score" not in html
     assert "not measurements of the Apache Iceberg project" in html
     csv_text = (tmp_path / "metrics.csv").read_text().splitlines()[0]
     assert csv_text.startswith("metric_id,definition_version,scope_type")

@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Metric definitions · Iceberg ecosystem health</title>
+<style>
+:root {
+  --bg: #f7f4ef;
+  --bg-raised: #fffdf9;
+  --fg: #1c1915;
+  --muted: #5e584f;
+  --line: #e2d9cc;
+  --accent: #0f6e6b;
+  --ok: #1f7a4d;
+  --ok-bg: #e5f4ec;
+  --warn: #8a5a12;
+  --warn-bg: #fbf0dc;
+  --bad: #9b2c2c;
+  --bad-bg: #f8e4e4;
+  --shadow: 0 1px 2px rgba(40, 30, 10, 0.06);
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161412;
+    --bg-raised: #211e1a;
+    --fg: #f3eee6;
+    --muted: #b3aa9e;
+    --line: #3a342c;
+    --accent: #7dccc8;
+    --ok: #8fd4ae;
+    --ok-bg: #1a3328;
+    --warn: #f0c27a;
+    --warn-bg: #332818;
+    --bad: #f0a0a0;
+    --bad-bg: #3a1e1e;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  background: var(--bg);
+  color: var(--fg);
+  line-height: 1.5;
+}
+.skip-link {
+  position: absolute;
+  left: -999px;
+  background: var(--accent);
+  color: #fff;
+  padding: 0.4rem 0.8rem;
+}
+.skip-link:focus { left: 0.5rem; top: 0.5rem; }
+.wrap { max-width: 68rem; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+.site-header h1 { margin: 0; font-size: 1.8rem; letter-spacing: -0.02em; }
+.tagline { color: var(--muted); }
+.page-intro {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.5rem;
+  margin: 0.5rem 0 1rem;
+  color: var(--muted);
+}
+.page-intro div { margin: 0; }
+.page-intro dt {
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.page-intro dd { margin: 0; color: var(--fg); }
+.page-intro label { margin-right: 0.7rem; }
+.site-nav {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line);
+  margin: 1rem 0 1.25rem;
+}
+.site-nav a {
+  flex: none;
+  padding: 0.45rem 0;
+  color: var(--muted);
+  font-weight: 650;
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+}
+.site-nav a:hover { color: var(--fg); border-bottom-color: var(--accent); }
+.sample, .banner {
+  background: var(--warn-bg);
+  color: var(--fg);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+}
+.source-badges { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.8rem 0 1.2rem; }
+.badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.78rem;
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.badge--partial { background: var(--warn-bg); color: var(--warn); }
+.badge--failed, .badge--bad { background: var(--bad-bg); color: var(--bad); }
+.scope-switch { display: flex; flex-wrap: wrap; gap: 0.4rem 0.8rem; align-items: flex-start; margin: 0.5rem 0 0.25rem; }
+.scope-switch a { color: var(--accent); text-decoration: none; }
+.scope-switch a[aria-current="page"] { color: var(--fg); font-weight: 650; text-decoration: underline; }
+.scope-label { color: var(--muted); font-size: 0.8rem; }
+.module-menu { position: relative; }
+.module-label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent);
+  text-align: left;
+  cursor: pointer;
+}
+.module-choice { padding-left: 0.75rem; color: var(--fg); font-weight: 650; }
+.module-column {
+  display: none;
+  position: absolute;
+  z-index: 3;
+  top: calc(100% - 0.35rem);
+  left: 0;
+  padding-top: 0.55rem;
+  min-width: 9rem;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0.4rem 0.7rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.module-menu:hover .module-column,
+.module-menu:focus-within .module-column { display: flex; }
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+.month-picker {
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.1rem 0.35rem;
+}
+.window-control { display: flex; flex-direction: column; gap: 0.35rem; min-width: 16rem; }
+.window-presets { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.window-presets button {
+  font: inherit;
+  font-size: 0.78rem;
+  color: var(--muted);
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.05rem 0.55rem;
+  cursor: pointer;
+}
+.window-presets button[aria-pressed="true"] { color: var(--fg); border-color: var(--accent); }
+.window-ends { display: flex; flex-wrap: wrap; gap: 0.35rem 0.7rem; }
+.window-slider { position: relative; height: 1.5rem; }
+.window-track {
+  position: absolute;
+  left: 0.45rem;
+  right: 0.45rem;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+  border-radius: 99px;
+  background: var(--line);
+}
+.window-slider input[type="range"] {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 1.5rem;
+  margin: 0;
+  background: transparent;
+  pointer-events: none;
+  appearance: none;
+}
+.window-slider input[type="range"]::-webkit-slider-runnable-track { height: 2px; background: transparent; }
+.window-slider input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  pointer-events: auto;
+  width: 0.9rem;
+  height: 0.9rem;
+  margin-top: -0.4rem;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+  box-shadow: 0 0 0 1px var(--line);
+  cursor: grab;
+}
+.window-slider input[type="range"]::-moz-range-track { background: transparent; border: none; }
+.window-slider input[type="range"]::-moz-range-thumb {
+  pointer-events: auto;
+  width: 0.9rem;
+  height: 0.9rem;
+  border: 2px solid var(--bg);
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: grab;
+}
+.spark {
+  display: grid;
+  grid-template-columns: auto 7.5rem;
+  column-gap: 0.3rem;
+  align-items: stretch;
+  width: fit-content;
+  margin: 0.35rem 0 0;
+  color: var(--accent);
+}
+.spark[hidden] { display: none; }
+.spark svg { width: 7.5rem; height: 2rem; display: block; }
+.spark-scale {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.delta { margin: 0.15rem 0 0; color: var(--muted); font-size: 0.9rem; }
+.delta:empty { display: none; }
+.exemplars { margin-top: 0.45rem; }
+.exemplars summary { cursor: pointer; color: var(--accent); font-size: 0.85rem; }
+.exemplars a { color: var(--accent); }
+.exemplar-side {
+  margin: 0.4rem 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.exemplars ul { margin: 0.15rem 0 0.35rem; padding-left: 1.1rem; font-size: 0.85rem; }
+.term { position: relative; border-bottom: 1px dotted var(--muted); cursor: help; }
+.tip {
+  display: none;
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  top: 1.4rem;
+  width: 16rem;
+  padding: 0.5rem 0.7rem;
+  background: var(--fg);
+  color: var(--bg);
+  border-radius: var(--radius);
+  font-size: 0.8rem;
+  font-weight: 400;
+  line-height: 1.4;
+}
+.term:hover .tip, .term:focus .tip { display: block; }
+.parts { list-style: none; margin: 0.6rem 0 0; padding: 0; }
+.parts li { display: grid; grid-template-columns: 7rem 1fr auto; gap: 0.4rem; align-items: center; margin: 0.2rem 0; font-size: 0.8rem; }
+.part-bar { display: block; height: 0.4rem; background: var(--accent); border-radius: 99px; }
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.75rem;
+}
+.card {
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 0.85rem 1rem;
+}
+.card h3 { margin: 0; font-size: 0.95rem; }
+.card-value { margin: 0.35rem 0 0.15rem; font-size: 1.55rem; }
+.value--insufficient { font-size: 1rem; color: var(--warn); }
+.card-meta, .scope-note, .card-links { color: var(--muted); font-size: 0.85rem; }
+.card-links a, footer a, .site-nav a:focus { color: var(--accent); }
+section { margin: 1.6rem 0; }
+section h2 { margin-bottom: 0.6rem; font-size: 1.25rem; }
+footer { margin-top: 2rem; color: var(--muted); font-size: 0.9rem; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.prose table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.prose th, .prose td {
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+  padding: 0.45rem 0.7rem 0.45rem 0;
+}
+.prose ul { padding-left: 1.2rem; }
+.prose a { color: var(--accent); }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<div class="wrap">
+<header class="site-header">
+<p class="tagline"><a href="../index.html">Iceberg ecosystem health</a></p>
+</header>
+<main id="main">
+<article class="prose"><h1>Metric definitions</h1><p># Metric definitions</p><p>Definition version 1.0. Windows end before the <code>as_of</code> timestamp. The monthly window is the last calendar month that has already ended, so a run on 15 October uses September. Rates are fractions from 0 to 1. Counts are published even when they are zero. Rates, medians, and concentration use a sample floor of 5 and are withheld, with flag <code>insufficient_data</code>, when the population is smaller.</p><p>Headcount metrics do not use that floor.</p><table><thead><tr><th>Metric</th><th>Population</th><th>Definition</th></tr></thead><tbody><tr><td><code>pr_inflow</code></td><td>pull requests opened in the month</td><td>Drafts are excluded.</td></tr><tr><td><code>pr_closures</code></td><td>pull requests closed in the month</td><td>Drafts are excluded. Includes merges, stale-bot closes, and other closes.</td></tr><tr><td><code>pr_closed_by_stale_bot</code></td><td>unmerged pull requests closed in the month by the stale-bot account</td><td>The account is <code>github-actions</code>, which runs the repository stale workflow. A merge is not counted here.</td></tr><tr><td><code>pr_closed_by_committer</code></td><td>pull requests closed in the month by a person</td><td>Merges count here. Closes by other bots, and closes with no recorded actor, stay in <code>pr_closures</code> only.</td></tr><tr><td><code>pr_backlog</code></td><td>pull requests still open at <code>as_of</code></td><td>Point measurement.</td></tr><tr><td><code>pr_age_days</code></td><td>open pull requests</td><td>Median age in days.</td></tr><tr><td><code>stale_pr_rate</code></td><td>open pull requests</td><td>Share open for at least 28 days.</td></tr><tr><td><code>stale_community_approvals</code></td><td>open pull requests at least 28 days old</td><td>Count approved by a GitHub login that is not in <code>config/iceberg/write-access.yaml</code>, with no approval from a login that is. The latest review from each person is the one that counts. The file lists logins only.</td></tr><tr><td><code>first_review_hours</code></td><td>pull requests opened in the month that received a review from someone else</td><td>Median hours from open to that review. Pull requests with no such review are not in the median.</td></tr><tr><td><code>merge_latency_hours</code></td><td>pull requests merged in the month</td><td>Median hours from open to merge.</td></tr><tr><td><code>active_contributors</code></td><td>people with at least one commit in the month</td><td>Count of identities.</td></tr><tr><td><code>new_contributors</code></td><td>people whose first in-scope commit falls in the month</td><td>Count of identities.</td></tr><tr><td><code>sustained_contributors</code></td><td>people with at least 5 commits in the 365 days ending at the month boundary</td><td>Count of identities.</td></tr><tr><td><code>first_to_second_retention</code></td><td>people whose first commit was at least 180 days before <code>as_of</code></td><td>Share whose second commit arrived within 180 days of the first.</td></tr><tr><td><code>contributor_hhi</code></td><td>people with a commit in the month</td><td>Herfindahl-Hirschman index of commit shares, from 1/N toward 1.</td></tr><tr><td><code>reviewer_hhi</code></td><td>reviewers in the month</td><td>Same index over review submissions, excluding the pull request author.</td></tr><tr><td><code>review_load</code></td><td>review submissions in the month</td><td>Mean submissions per reviewer.</td></tr><tr><td><code>dev_list_reply_hours</code></td><td>threads started in the month that received a reply from someone else</td><td>Median hours to that reply on dev@iceberg.apache.org.</td></tr><tr><td><code>unanswered_rate</code></td><td>threads started in the month</td><td>Share with no reply from a different person by <code>as_of</code>.</td></tr><tr><td><code>positive_share</code></td><td>classified dev-list messages sent in the month</td><td>Share whose lexicon score is above zero. The score is the sum of tone-word weights in the subject and the first 2,000 characters of the message's own text, with a word's sign flipped when one of the three words before it is a negation. Messages with no plain text, or stored without a label, are not in the population.</td></tr><tr><td><code>neutral_share</code></td><td>classified dev-list messages sent in the month</td><td>Share whose lexicon score is zero.</td></tr><tr><td><code>negative_share</code></td><td>classified dev-list messages sent in the month</td><td>Share whose lexicon score is below zero.</td></tr><tr><td><code>stable_releases</code></td><td>stable tags in the trailing 730 days</td><td>Release candidates, alphas, betas, snapshots, and previews are excluded. The ecosystem value counts Apache Iceberg Java releases, not the sum of the client repositories.</td></tr><tr><td><code>time_since_last_release_days</code></td><td>the newest stable tag at or before <code>as_of</code></td><td>One observation. Java tags count only when the version is also listed under <a href="https://archive.apache.org/dist/iceberg/.">https://archive.apache.org/dist/iceberg/.</a> Without that list the tier is <code>proxy</code>.</td></tr></tbody></table><p>A pull request or commit is counted in every Java component it touches. When it touches more than one, it is also counted under <code>cross-cutting</code>. Repository and ecosystem totals still count that change once. Component shares therefore overlap and must not be added together.</p><p>Project-wide mail and the ecosystem release metrics are not assigned to a module.</p></article>
+</main>
+</div>
+</body>
+</html>

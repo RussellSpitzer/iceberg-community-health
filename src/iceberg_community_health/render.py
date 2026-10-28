@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 from io import StringIO
 from pathlib import Path
 
@@ -35,6 +36,7 @@ _SECTIONS = (
             "pr_backlog",
             "pr_age_days",
             "stale_pr_rate",
+            "stale_community_approvals",
             "merge_latency_hours",
         ),
     ),
@@ -74,6 +76,7 @@ _LABELS = {
     "pr_backlog": "Open pull requests",
     "pr_age_days": "Median open age",
     "stale_pr_rate": "Stale pull requests",
+    "stale_community_approvals": "Stale, contributor-approved",
     "merge_latency_hours": "Median time to merge",
     "first_review_hours": "Median time to first review",
     "reviewer_hhi": "Reviewer concentration",
@@ -119,6 +122,7 @@ _DEFINITIONS = {
     "pr_backlog": "Pull requests still open at the end of the month. Drafts are excluded.",
     "pr_age_days": "Median age, in days, of pull requests open at the end of the month.",
     "stale_pr_rate": "Share of open pull requests that have been open for at least 28 days.",
+    "stale_community_approvals": "Open pull requests at least 28 days old that someone without write access has approved, and no one with write access has approved. The latest review from each person counts. Write access is the GitHub login list in the project roster.",
     "merge_latency_hours": "Median hours from open to merge for pull requests merged in the month.",
     "first_review_hours": "Median hours from open to the first review by someone other than the author. Pull requests with no such review are left out of the median.",
     "reviewer_hhi": "Concentration of review submissions among reviewers this month, excluding the pull request author.",
@@ -420,6 +424,15 @@ section { margin: 1.6rem 0; }
 section h2 { margin-bottom: 0.6rem; font-size: 1.25rem; }
 footer { margin-top: 2rem; color: var(--muted); font-size: 0.9rem; }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.prose table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.prose th, .prose td {
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+  padding: 0.45rem 0.7rem 0.45rem 0;
+}
+.prose ul { padding-left: 1.2rem; }
+.prose a { color: var(--accent); }
 """
 
 
@@ -453,6 +466,177 @@ def write_report(report: dict, output: Path) -> None:
             repos,
             modules,
         )
+    _write_docs(output)
+
+
+_REPO_DOCS = (
+    ("metrics.html", "METRICS.md", "Methodology"),
+    ("limitations.html", "LIMITATIONS.md", "Limitations"),
+    ("phase-2.html", "PHASE-2.md", "Phase 2"),
+    ("review-routing.html", "REVIEW-ROUTING.md", "Review routing"),
+)
+_MARKDOWN_LINK = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+_BARE_URL = re.compile(r"https://[^\s)]+")
+
+
+def _write_docs(output: Path) -> None:
+    source = Path(__file__).resolve().parents[2] / "docs"
+    if not source.is_dir():
+        return
+    directory = output / "docs"
+    directory.mkdir(parents=True, exist_ok=True)
+    for filename, markdown_name, _label in _REPO_DOCS:
+        path = source / markdown_name
+        if not path.is_file():
+            continue
+        title, body = _markdown_html(path.read_text())
+        (directory / filename).write_text(_doc_page(title, body))
+
+
+def _doc_links(prefix: str) -> str:
+    links = [
+        f'<a href="{prefix}docs/{filename}">{_esc(label)}</a>'
+        for filename, _markdown_name, label in _REPO_DOCS
+    ]
+    return " · ".join(links)
+
+
+def _doc_page(title: str, body: str) -> str:
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{_esc(title)} · Iceberg ecosystem health</title>
+<style>{_STYLE}</style>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<div class="wrap">
+<header class="site-header">
+<p class="tagline"><a href="../index.html">Iceberg ecosystem health</a></p>
+</header>
+<main id="main">
+<article class="prose">{body}</article>
+</main>
+</div>
+</body>
+</html>
+"""
+
+
+def _markdown_html(text: str) -> tuple[str, str]:
+    blocks: list[str] = []
+    current: list[str] = []
+
+    def flush() -> None:
+        if current:
+            blocks.append("\n".join(current))
+            current.clear()
+
+    for line in text.splitlines():
+        if line.strip():
+            current.append(line)
+        else:
+            flush()
+    flush()
+    title = "Documentation"
+    html: list[str] = []
+    for block in blocks:
+        if block.startswith("# "):
+            title = block[2:].strip()
+            html.append(f"<h1>{_inline(title)}</h1>")
+        elif block.startswith("## "):
+            html.append(f"<h2>{_inline(block[3:].strip())}</h2>")
+        listed = _markdown_list(block)
+        if block.startswith("|"):
+            html.append(_markdown_table(block))
+        elif listed is not None:
+            html.append(listed)
+        else:
+            paragraph = " ".join(line.strip() for line in block.splitlines())
+            html.append(f"<p>{_inline(paragraph)}</p>")
+    return title, "".join(html)
+
+
+def _markdown_list(block: str) -> str | None:
+    lines = block.splitlines()
+    if not lines[0].startswith("- "):
+        return None
+    if not all(line.startswith("- ") or line.startswith("  ") for line in lines):
+        return None
+    items: list[str] = []
+    current: list[str] = []
+    for line in lines:
+        if line.startswith("- "):
+            if current:
+                items.append(" ".join(current))
+            current = [line[2:].strip()]
+        else:
+            current.append(line.strip())
+    if current:
+        items.append(" ".join(current))
+    return "<ul>" + "".join(f"<li>{_inline(item)}</li>" for item in items) + "</ul>"
+
+
+def _markdown_table(block: str) -> str:
+    rows = []
+    for line in block.splitlines():
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if cells and all(set(cell) <= set("-: ") and cell for cell in cells):
+            continue
+        rows.append(cells)
+    if not rows:
+        return ""
+    head = "".join(f"<th>{_inline(cell)}</th>" for cell in rows[0])
+    body = "".join(
+        "<tr>" + "".join(f"<td>{_inline(cell)}</td>" for cell in row) + "</tr>" for row in rows[1:]
+    )
+    return f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
+
+
+def _doc_href(target: str) -> str:
+    name = Path(target).name
+    for filename, markdown_name, _label in _REPO_DOCS:
+        if name == markdown_name:
+            return filename
+    return target
+
+
+def _inline(text: str) -> str:
+    pieces: list[str] = []
+    index = 0
+    while index < len(text):
+        code_at = text.find("`", index)
+        link_at = text.find("[", index)
+        url_at = text.find("https://", index)
+        found = [position for position in (code_at, link_at, url_at) if position >= 0]
+        if not found:
+            pieces.append(_esc(text[index:]))
+            break
+        next_at = min(found)
+        pieces.append(_esc(text[index:next_at]))
+        if next_at == code_at:
+            end = text.find("`", next_at + 1)
+            if end < 0:
+                pieces.append(_esc(text[next_at:]))
+                break
+            pieces.append(f"<code>{_esc(text[next_at + 1:end])}</code>")
+            index = end + 1
+            continue
+        link = _MARKDOWN_LINK.match(text, next_at) if next_at == link_at else None
+        if link is not None:
+            pieces.append(f'<a href="{_esc(_doc_href(link.group(2)))}">{_inline(link.group(1))}</a>')
+            index = link.end()
+            continue
+        url = _BARE_URL.match(text, next_at) if next_at == url_at else None
+        if url is not None:
+            pieces.append(f'<a href="{_esc(url.group(0))}">{_esc(url.group(0))}</a>')
+            index = url.end()
+            continue
+        pieces.append(_esc(text[next_at]))
+        index = next_at + 1
+    return "".join(pieces)
 
 
 def _write_page(
@@ -554,7 +738,7 @@ def _html(
 <div class="wrap">
 <header class="site-header">
 <h1>Iceberg ecosystem health</h1>
-<p class="tagline">Separate measurements for the Apache Iceberg project and its implementations. This page does not combine them into a score.</p>
+<p class="tagline">Separate measurements for the Apache Iceberg project and its implementations.</p>
 </header>
 <nav class="scope-switch" aria-label="Scope">
 {_switcher(prefix, scope_type, scope_id, project_id, repos, modules)}
@@ -571,6 +755,7 @@ def _html(
 {extra}
 </main>
 <footer class="site-footer">
+<p class="card-links">{_doc_links(prefix)}</p>
 <p class="card-links"><a href="{prefix}metrics.json">JSON</a> · <a href="{prefix}metrics.csv">CSV</a> · <a href="https://github.com/RussellSpitzer/iceberg-community-health">GitHub</a></p>
 <p>Run <code>{_esc(report.get("run_id"))}</code></p>
 </footer>
@@ -1507,12 +1692,17 @@ def _exclusions(report: dict) -> str:
 
 
 def _banner(report: dict) -> str:
-    if report.get("dataset") != "sample":
-        return ""
-    return (
-        '<p class="sample">Sample dataset from the checked-in fixture. '
-        "These figures are not measurements of the Apache Iceberg project.</p>"
-    )
+    parts = []
+    if report.get("dataset") == "sample":
+        parts.append(
+            '<p class="sample">Sample dataset from the checked-in fixture. '
+            "These figures are not measurements of the Apache Iceberg project.</p>"
+        )
+    for info in (report.get("sources") or {}).values():
+        notice = (info or {}).get("notice")
+        if notice:
+            parts.append(f'<p class="banner">{_esc(notice)}</p>')
+    return "".join(parts)
 
 
 def _candidates(report: dict) -> str:

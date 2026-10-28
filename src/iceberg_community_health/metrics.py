@@ -32,7 +32,7 @@ _PR_COLUMNS = (
     "closed_by",
     "title",
 )
-_REVIEW_COLUMNS = ("repo", "number", "reviewer", "submitted_at", "component")
+_REVIEW_COLUMNS = ("repo", "number", "reviewer", "submitted_at", "state", "component")
 
 _SCOPE_SQL = """
 (
@@ -80,6 +80,8 @@ def compute(records: dict, project: dict, as_of: str, sources: dict | None = Non
     _register(connection, "prs", pulls, _PR_COLUMNS)
     _register(connection, "reviews", reviews_base, _REVIEW_COLUMNS)
     _register(connection, "review_components", reviews_by_component, _REVIEW_COLUMNS)
+    writers = _writers(project)
+    approvals = _approvals(connection, as_of)
 
     stable, release_tier = _stable_releases(releases, project)
     release_tier = _downgrade(release_tier, sources, "releases")
@@ -109,6 +111,8 @@ def compute(records: dict, project: dict, as_of: str, sources: dict | None = Non
                 settings,
                 definition,
                 _downgrade("established", sources, "github"),
+                writers,
+                approvals,
             )
         )
         review_table = "review_components" if scope_type == "component" else "reviews"
@@ -227,7 +231,17 @@ def _contributor_metrics(
 
 
 def _pull_metrics(
-    connection, scope_type, scope_id, month_start, month_end, as_of, settings, definition, tier
+    connection,
+    scope_type,
+    scope_id,
+    month_start,
+    month_end,
+    as_of,
+    settings,
+    definition,
+    tier,
+    writers,
+    approvals,
 ):
     floors = settings["floors"]
     opened = _pull_facts(connection, scope_type, scope_id)
@@ -257,6 +271,7 @@ def _pull_metrics(
         if reviewed_at and reviewed_at >= row["created_at"]:
             response_hours.append((row, hours_between(row["created_at"], reviewed_at)))
     stale_rate = (len(stale) / len(open_now)) if open_now else None
+    community_approved = _community_approved(ages, approvals, writers, settings)
     return [
         _count("pr_inflow", scope_type, scope_id, month_start, month_end, len(inflow), definition, tier),
         _count("pr_closures", scope_type, scope_id, month_start, month_end, len(closed), definition, tier),
@@ -307,6 +322,19 @@ def _pull_metrics(
             floors["rate"],
             definition,
             tier,
+        ),
+        _with_exemplars(
+            _count(
+                "stale_community_approvals",
+                scope_type,
+                scope_id,
+                as_of,
+                as_of,
+                len(community_approved),
+                definition,
+                tier,
+            ),
+            _exemplar_rows(community_approved, "days", "days"),
         ),
         _with_exemplars(
             _sample(
@@ -598,6 +626,49 @@ def _pull_facts(connection, scope_type, scope_id):
     ]
 
 
+def _writers(project: dict) -> dict[str, set[str]]:
+    """GitHub logins configured as having write access, applied to every project repository."""
+    logins = {login.lower() for login in project.get("write_logins") or []}
+    return {repo["id"]: set(logins) for repo in project["repositories"]}
+
+
+def _approvals(connection, as_of: str) -> dict[tuple[str, str], set[str]]:
+    """Reviewers whose latest review at or before `as_of` is an approval."""
+    rows = connection.execute(
+        """
+        SELECT repo, number, reviewer
+        FROM (
+            SELECT repo, number, lower(reviewer) AS reviewer, state,
+                   row_number() OVER (
+                       PARTITION BY repo, number, lower(reviewer)
+                       ORDER BY submitted_at DESC
+                   ) AS rn
+            FROM reviews
+            WHERE reviewer IS NOT NULL AND submitted_at IS NOT NULL AND submitted_at <= ?
+        )
+        WHERE rn = 1 AND state = 'APPROVED'
+        """,
+        [as_of],
+    ).fetchall()
+    approvals: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for repo, number, reviewer in rows:
+        if reviewer:
+            approvals[(repo, number)].add(reviewer)
+    return approvals
+
+
+def _community_approved(ages, approvals, writers, settings) -> list[tuple[dict, float]]:
+    chosen = []
+    for row, age in ages:
+        if age < settings["stale_days"]:
+            continue
+        reviewers = approvals.get((row["repo"], row["number"])) or set()
+        if not reviewers or reviewers & (writers.get(row["repo"]) or set()):
+            continue
+        chosen.append((row, age))
+    return chosen
+
+
 def _first_reviews(connection, scope_type, scope_id) -> dict[tuple[str, str], str]:
     table = "review_components" if scope_type == "component" else "reviews"
     rows = connection.execute(
@@ -805,6 +876,7 @@ def _clean_review(row: dict) -> dict:
         "number": str(row.get("number")),
         "reviewer": row.get("reviewer") or None,
         "submitted_at": norm_ts(row.get("submitted_at")),
+        "state": row.get("state") or "",
         "component": row.get("component") or "",
     }
 

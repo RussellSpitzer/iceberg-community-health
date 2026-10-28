@@ -17,6 +17,7 @@ Headcount metrics do not use that floor.
 | `pr_backlog` | pull requests still open at `as_of` | Point measurement. |
 | `pr_age_days` | open pull requests | Median age in days. |
 | `stale_pr_rate` | open pull requests | Share open for at least 28 days. |
+| `stale_community_approvals` | open pull requests at least 28 days old | Count approved by a GitHub login that is not in `config/iceberg/write-access.yaml`, with no approval from a login that is. The latest review from each person is the one that counts. The file lists logins only. |
 | `first_review_hours` | pull requests opened in the month that received a review from someone else | Median hours from open to that review. Pull requests with no such review are not in the median. |
 | `merge_latency_hours` | pull requests merged in the month | Median hours from open to merge. |
 | `active_contributors` | people with at least one commit in the month | Count of identities. |

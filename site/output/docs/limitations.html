@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Limitations · Iceberg ecosystem health</title>
+<style>
+:root {
+  --bg: #f7f4ef;
+  --bg-raised: #fffdf9;
+  --fg: #1c1915;
+  --muted: #5e584f;
+  --line: #e2d9cc;
+  --accent: #0f6e6b;
+  --ok: #1f7a4d;
+  --ok-bg: #e5f4ec;
+  --warn: #8a5a12;
+  --warn-bg: #fbf0dc;
+  --bad: #9b2c2c;
+  --bad-bg: #f8e4e4;
+  --shadow: 0 1px 2px rgba(40, 30, 10, 0.06);
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161412;
+    --bg-raised: #211e1a;
+    --fg: #f3eee6;
+    --muted: #b3aa9e;
+    --line: #3a342c;
+    --accent: #7dccc8;
+    --ok: #8fd4ae;
+    --ok-bg: #1a3328;
+    --warn: #f0c27a;
+    --warn-bg: #332818;
+    --bad: #f0a0a0;
+    --bad-bg: #3a1e1e;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  background: var(--bg);
+  color: var(--fg);
+  line-height: 1.5;
+}
+.skip-link {
+  position: absolute;
+  left: -999px;
+  background: var(--accent);
+  color: #fff;
+  padding: 0.4rem 0.8rem;
+}
+.skip-link:focus { left: 0.5rem; top: 0.5rem; }
+.wrap { max-width: 68rem; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+.site-header h1 { margin: 0; font-size: 1.8rem; letter-spacing: -0.02em; }
+.tagline { color: var(--muted); }
+.page-intro {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.5rem;
+  margin: 0.5rem 0 1rem;
+  color: var(--muted);
+}
+.page-intro div { margin: 0; }
+.page-intro dt {
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.page-intro dd { margin: 0; color: var(--fg); }
+.page-intro label { margin-right: 0.7rem; }
+.site-nav {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line);
+  margin: 1rem 0 1.25rem;
+}
+.site-nav a {
+  flex: none;
+  padding: 0.45rem 0;
+  color: var(--muted);
+  font-weight: 650;
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+}
+.site-nav a:hover { color: var(--fg); border-bottom-color: var(--accent); }
+.sample, .banner {
+  background: var(--warn-bg);
+  color: var(--fg);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+}
+.source-badges { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.8rem 0 1.2rem; }
+.badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.78rem;
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.badge--partial { background: var(--warn-bg); color: var(--warn); }
+.badge--failed, .badge--bad { background: var(--bad-bg); color: var(--bad); }
+.scope-switch { display: flex; flex-wrap: wrap; gap: 0.4rem 0.8rem; align-items: flex-start; margin: 0.5rem 0 0.25rem; }
+.scope-switch a { color: var(--accent); text-decoration: none; }
+.scope-switch a[aria-current="page"] { color: var(--fg); font-weight: 650; text-decoration: underline; }
+.scope-label { color: var(--muted); font-size: 0.8rem; }
+.module-menu { position: relative; }
+.module-label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent);
+  text-align: left;
+  cursor: pointer;
+}
+.module-choice { padding-left: 0.75rem; color: var(--fg); font-weight: 650; }
+.module-column {
+  display: none;
+  position: absolute;
+  z-index: 3;
+  top: calc(100% - 0.35rem);
+  left: 0;
+  padding-top: 0.55rem;
+  min-width: 9rem;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0.4rem 0.7rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.module-menu:hover .module-column,
+.module-menu:focus-within .module-column { display: flex; }
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+.month-picker {
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.1rem 0.35rem;
+}
+.window-control { display: flex; flex-direction: column; gap: 0.35rem; min-width: 16rem; }
+.window-presets { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.window-presets button {
+  font: inherit;
+  font-size: 0.78rem;
+  color: var(--muted);
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.05rem 0.55rem;
+  cursor: pointer;
+}
+.window-presets button[aria-pressed="true"] { color: var(--fg); border-color: var(--accent); }
+.window-ends { display: flex; flex-wrap: wrap; gap: 0.35rem 0.7rem; }
+.window-slider { position: relative; height: 1.5rem; }
+.window-track {
+  position: absolute;
+  left: 0.45rem;
+  right: 0.45rem;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+  border-radius: 99px;
+  background: var(--line);
+}
+.window-slider input[type="range"] {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 1.5rem;
+  margin: 0;
+  background: transparent;
+  pointer-events: none;
+  appearance: none;
+}
+.window-slider input[type="range"]::-webkit-slider-runnable-track { height: 2px; background: transparent; }
+.window-slider input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  pointer-events: auto;
+  width: 0.9rem;
+  height: 0.9rem;
+  margin-top: -0.4rem;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+  box-shadow: 0 0 0 1px var(--line);
+  cursor: grab;
+}
+.window-slider input[type="range"]::-moz-range-track { background: transparent; border: none; }
+.window-slider input[type="range"]::-moz-range-thumb {
+  pointer-events: auto;
+  width: 0.9rem;
+  height: 0.9rem;
+  border: 2px solid var(--bg);
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: grab;
+}
+.spark {
+  display: grid;
+  grid-template-columns: auto 7.5rem;
+  column-gap: 0.3rem;
+  align-items: stretch;
+  width: fit-content;
+  margin: 0.35rem 0 0;
+  color: var(--accent);
+}
+.spark[hidden] { display: none; }
+.spark svg { width: 7.5rem; height: 2rem; display: block; }
+.spark-scale {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.delta { margin: 0.15rem 0 0; color: var(--muted); font-size: 0.9rem; }
+.delta:empty { display: none; }
+.exemplars { margin-top: 0.45rem; }
+.exemplars summary { cursor: pointer; color: var(--accent); font-size: 0.85rem; }
+.exemplars a { color: var(--accent); }
+.exemplar-side {
+  margin: 0.4rem 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.exemplars ul { margin: 0.15rem 0 0.35rem; padding-left: 1.1rem; font-size: 0.85rem; }
+.term { position: relative; border-bottom: 1px dotted var(--muted); cursor: help; }
+.tip {
+  display: none;
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  top: 1.4rem;
+  width: 16rem;
+  padding: 0.5rem 0.7rem;
+  background: var(--fg);
+  color: var(--bg);
+  border-radius: var(--radius);
+  font-size: 0.8rem;
+  font-weight: 400;
+  line-height: 1.4;
+}
+.term:hover .tip, .term:focus .tip { display: block; }
+.parts { list-style: none; margin: 0.6rem 0 0; padding: 0; }
+.parts li { display: grid; grid-template-columns: 7rem 1fr auto; gap: 0.4rem; align-items: center; margin: 0.2rem 0; font-size: 0.8rem; }
+.part-bar { display: block; height: 0.4rem; background: var(--accent); border-radius: 99px; }
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.75rem;
+}
+.card {
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 0.85rem 1rem;
+}
+.card h3 { margin: 0; font-size: 0.95rem; }
+.card-value { margin: 0.35rem 0 0.15rem; font-size: 1.55rem; }
+.value--insufficient { font-size: 1rem; color: var(--warn); }
+.card-meta, .scope-note, .card-links { color: var(--muted); font-size: 0.85rem; }
+.card-links a, footer a, .site-nav a:focus { color: var(--accent); }
+section { margin: 1.6rem 0; }
+section h2 { margin-bottom: 0.6rem; font-size: 1.25rem; }
+footer { margin-top: 2rem; color: var(--muted); font-size: 0.9rem; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.prose table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.prose th, .prose td {
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+  padding: 0.45rem 0.7rem 0.45rem 0;
+}
+.prose ul { padding-left: 1.2rem; }
+.prose a { color: var(--accent); }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<div class="wrap">
+<header class="site-header">
+<p class="tagline"><a href="../index.html">Iceberg ecosystem health</a></p>
+</header>
+<main id="main">
+<article class="prose"><h1>Limitations</h1><p># Limitations</p><p>Identities match on the exact email address or the exact GitHub login. Two addresses for the same person stay separate until someone adds an entry to <code>config/iceberg/identity.yaml</code>. That bias undercounts people and can make concentration look higher than it is. Display names are not used.</p><p>Bot commits, reviews, and list mail are excluded. The exclusion counts are on the report. GitHub private addresses at <code>users.noreply.github.com</code> are kept. Two of those addresses for the same person still count as two people until an identity override says otherwise.</p><p>Draft pull requests are omitted from the pull-request metrics. <code>stale_community_approvals</code> treats the GitHub logins in <code>config/iceberg/write-access.yaml</code> as having write access on every project repository. The file stores logins only. When the public project roster lists more people than that file, the page reports the two counts and does not name anyone. A roster entry with no GitHub login cannot be matched, so an approval from that person is not treated as write access. The list is current, not a history of when write access started or ended. A pull request closed by <code>github-actions</code> without a merge is counted as a stale-bot close. A merge, or a close by any other person, is a committer close. Other bots are in the closure total only. The first-review median includes only pull requests that received a review from someone other than the author, so it does not describe pull requests that are still waiting.</p><p>Component slices count a change in each family it touches. They overlap. Spark and Flink versions are one family each: <code>spark/v3.5</code> and <code>spark/v4.1</code> both count as <code>spark</code>, and the same for Flink. A change that only touches two versions of one family is not cross-cutting. Mail responsiveness and the ecosystem release metrics stay at ecosystem scope so they are not added on top of a module's activity.</p><p>Dev-list messages come from a Pony Mail mbox for each completed month in the history window (<code>https://lists.apache.org/api/mbox.lua?d=YYYY-MM</code>). The stats endpoint returns counts only, so it is not the message source. The bounded smoke check does not download a month of mail.</p><p><code>stable_releases</code> at ecosystem scope is the Apache Iceberg Java release train. Python, Rust, Go, C++, and the Terraform provider have their own repository rows. Those rows are not additional ASF Iceberg releases.</p><p>A source that fails does not erase the last successful Parquet snapshot. The manifest records <code>failed</code>, and metrics that depend on that source are marked <code>tier: proxy</code> until a later run succeeds. A proxy value is the previous data, not a fresh measurement.</p><p>The three tone shares (<code>positive_share</code>, <code>neutral_share</code>, <code>negative_share</code>) come from a rough word list in this repository applied to public dev@iceberg.apache.org text: the subject and the first 2,000 characters of the message's own words, after quoted replies, attribution lines, sign-offs, and the signature are dropped. It is not a validated sentiment model. It misreads sarcasm, technical words, and non-English mail. It is not a judgment of any person, and it is not a health score. Message bodies are not stored; each message row keeps only its label. Messages with no plain text are left out of the shares rather than counted as neutral, and so are rows stored before labels existed.</p><p>This repository does not publish a single health score. Nothing in the report posts a comment, requests a reviewer, or publishes the page.</p><p>The history behind a report is the Parquet store committed at <code>data/projects/iceberg/</code>. GitHub Pages serves the rendered HTML, JSON, and CSV committed at <code>site/output/</code>. It does not recompute the report, and it does not serve the Parquet files. A collect appends to that store, partitioned by the month of the event. The store keeps 72 completed months (October 2020 through September 2026 for a collect in October 2026). The page opens on the last 12 of them. The 1-year, 3-year, and 6-year choices, the range slider, and the From and To menus all set that same window. The change on a card is the newest month in the window minus the first month in the window. A sparkline stays monthly through 18 months. A wider window draws about twelve points, each the last month of its stretch. A later collect does not download completed months again. It reads git history from the start of the still-open month, mail only for months not already stored with tone labels plus the open month, and pull requests updated since the previous collect. The GitHub state records <code>coverage_start</code>, the earliest update time the stored pull requests are complete from. Until that reaches the start of the history window, a collect walks every pull request updated on or after the window start, plus the open pull requests, and re-reads the recent ones it already has. A pull request closed before the window start and never updated again is absent. Commit history is the full history of Apache <code>main</code>, kept from the first collect. The collector fetches the remote whose URL is <code>apache/&lt;repository&gt;</code>, preferring <code>upstream</code> and <code>apache</code> over <code>origin</code>. When the checkout has no Apache remote, it fetches <code>https://github.com/apache/&lt;repository&gt;.git</code> directly. A personal fork is never the history source. Dev-list rows are the Pony Mail mbox for each completed month in the window. Each metric is computed at the end of every completed month in that window.</p><p>The <code>collect</code> workflow runs only when someone starts it. A nightly schedule stays off until a live dataset has been reviewed.</p></article>
+</main>
+</div>
+</body>
+</html>

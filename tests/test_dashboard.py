@@ -31,6 +31,7 @@ _SECTIONS = {
         "pr_backlog",
         "pr_age_days",
         "stale_pr_rate",
+        "stale_community_approvals",
         "merge_latency_hours",
     },
     "reviews": {"first_review_hours", "reviewer_hhi", "review_load"},
@@ -194,6 +195,26 @@ def test_sample_banner_is_limited_to_the_fixture_dataset(tmp_path):
     _html, page = _render(tmp_path / "sample", sample)
     assert any(attrs.get("class") == "sample" for _tag, attrs in page.starts)
     assert "not measurements of the Apache Iceberg project" in " ".join(page.text)
+
+
+def test_roster_gap_is_shown_without_naming_anyone(tmp_path):
+    report = _report(
+        sources={
+            "roster": {
+                "status": "ok",
+                "notice": (
+                    "The ASF roster lists 42 people and the stored GitHub login list has 40. "
+                    "Add the new logins to config/iceberg/write-access.yaml."
+                ),
+            }
+        }
+    )
+    html, page = _render(tmp_path, report)
+    text = " ".join(page.text)
+    assert "lists 42 people" in text
+    assert "login list has 40" in text
+    assert any(attrs.get("class") == "banner" for _tag, attrs in page.starts)
+    assert "badge badge--source" in html
 
 
 def test_source_badges_distinguish_ok_partial_and_failed(tmp_path):
@@ -516,6 +537,22 @@ def test_header_uses_calendar_dates(tmp_path):
     assert "<dt>Scope</dt>" in html
 
 
+def test_repo_docs_are_rendered_and_linked(tmp_path):
+    html, page = _render(tmp_path, _report())
+    hrefs = [attrs.get("href") for _tag, attrs in page.starts if attrs.get("href")]
+    assert "docs/metrics.html" in hrefs
+    assert "docs/limitations.html" in hrefs
+    assert "docs/phase-2.html" in hrefs
+    assert "docs/review-routing.html" in hrefs
+    methodology = (tmp_path / "docs" / "metrics.html").read_text()
+    assert "<h1>Metric definitions</h1>" in methodology
+    assert "<code>pr_inflow</code>" in methodology
+    assert 'href="../index.html"' in methodology
+    phase = (tmp_path / "docs" / "phase-2.html").read_text()
+    assert 'href="metrics.html"' in phase
+    assert "tone shares" in phase
+
+
 def test_downloads_and_no_composite_score_in_the_payload(tmp_path):
     report = _report()
     html, page = _render(tmp_path, report)
@@ -525,7 +562,7 @@ def test_downloads_and_no_composite_score_in_the_payload(tmp_path):
     assert "https://github.com/RussellSpitzer/iceberg-community-health" in hrefs
     payload = json.loads((tmp_path / "metrics.json").read_text())
     assert "score" not in payload
-    assert "does not combine them into a score" in html
+    assert "does not combine them into a score" not in html
     header = (tmp_path / "metrics.csv").read_text().splitlines()[0]
     assert header.startswith("metric_id,definition_version,scope_type")
 
