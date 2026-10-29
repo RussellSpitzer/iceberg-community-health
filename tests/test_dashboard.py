@@ -25,6 +25,14 @@ _SECTIONS = {
         "first_to_second_retention",
         "contributor_hhi",
     },
+    "first-contributors": {
+        "first_pr_went_stale",
+        "first_pr_merged",
+        "first_pr_reviewed",
+        "first_mail_sent",
+        "first_mail_replied",
+        "first_mail_unanswered",
+    },
     "pull-requests": {
         "pr_inflow",
         "pr_closures",
@@ -132,6 +140,7 @@ def test_dashboard_sections_and_ecosystem_cards(tmp_path):
     ids = [attrs.get("id") for tag, attrs in page.starts if tag == "section"]
     assert ids == [
         "contributors",
+        "first-contributors",
         "pull-requests",
         "reviews",
         "mailing-list",

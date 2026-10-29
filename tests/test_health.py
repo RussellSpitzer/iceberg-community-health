@@ -352,6 +352,140 @@ def test_stale_community_approvals_exclude_writer_approvals(project):
     assert numbers == {"1", "6", "11", "13"}
 
 
+def test_first_author_pulls_count_stale_merged_and_reviewed(project):
+    def pull(number, author, created, **extra):
+        row = {
+            "repo": "apache/iceberg",
+            "number": number,
+            "author": author,
+            "created_at": created,
+            "closed_at": None,
+            "merged_at": None,
+            "draft": "false",
+            "component": "core-api-data",
+            "title": f"Pull {number}",
+        }
+        row.update(extra)
+        return row
+
+    def review(number, reviewer, submitted):
+        return {
+            "repo": "apache/iceberg",
+            "number": number,
+            "reviewer": reviewer,
+            "submitted_at": submitted,
+            "state": "COMMENTED",
+        }
+
+    report = compute(
+        {
+            "prs": [
+                pull("1", "newbie", "2026-08-10T00:00:00Z"),
+                pull(
+                    "2",
+                    "mergedone",
+                    "2026-07-01T00:00:00Z",
+                    closed_at="2026-09-10T00:00:00Z",
+                    merged_at="2026-09-10T00:00:00Z",
+                ),
+                pull("3", "reviewedone", "2026-09-10T00:00:00Z"),
+                pull(
+                    "4",
+                    "veteran",
+                    "2026-06-01T00:00:00Z",
+                    closed_at="2026-06-02T00:00:00Z",
+                    merged_at="2026-06-02T00:00:00Z",
+                ),
+                pull(
+                    "5",
+                    "veteran",
+                    "2026-09-05T00:00:00Z",
+                    closed_at="2026-09-06T00:00:00Z",
+                    merged_at="2026-09-06T00:00:00Z",
+                ),
+                pull("6", "closedearly", "2026-08-20T00:00:00Z", closed_at="2026-09-01T00:00:00Z"),
+                pull("7", None, "2026-08-10T00:00:00Z"),
+                pull("8", "sparknew", "2026-09-03T00:00:00Z", component="spark"),
+                pull(
+                    "9",
+                    "corethen",
+                    "2026-06-01T00:00:00Z",
+                    closed_at="2026-06-02T00:00:00Z",
+                    merged_at="2026-06-02T00:00:00Z",
+                ),
+                pull("10", "corethen", "2026-09-08T00:00:00Z", component="spark"),
+                pull("11", "draftee", "2026-01-01T00:00:00Z", draft="true"),
+                pull(
+                    "12",
+                    "draftee",
+                    "2026-09-01T00:00:00Z",
+                    closed_at="2026-09-02T00:00:00Z",
+                    merged_at="2026-09-02T00:00:00Z",
+                ),
+            ],
+            "reviews": [
+                review("2", "someone", "2026-09-09T00:00:00Z"),
+                review("3", "reviewedone", "2026-09-11T00:00:00Z"),
+                review("3", "someone", "2026-09-12T00:00:00Z"),
+                review("5", "someone", "2026-09-05T12:00:00Z"),
+                review("8", "someone", "2026-09-04T00:00:00Z"),
+                review("10", "someone", "2026-09-09T00:00:00Z"),
+            ],
+        },
+        project,
+        AS_OF,
+    )
+    assert _metric(report, "first_pr_went_stale")["value"] == 1
+    assert _metric(report, "first_pr_merged")["value"] == 2
+    assert _metric(report, "first_pr_reviewed")["value"] == 3
+    assert _metric(report, "first_pr_reviewed", "component", "spark")["value"] == 2
+    assert _metric(report, "first_pr_merged", "component", "spark")["value"] == 0
+    stale_numbers = {item["number"] for item in _metric(report, "first_pr_went_stale")["exemplars"]}
+    merged_numbers = {item["number"] for item in _metric(report, "first_pr_merged")["exemplars"]}
+    reviewed_numbers = {item["number"] for item in _metric(report, "first_pr_reviewed")["exemplars"]}
+    assert stale_numbers == {"1"}
+    assert merged_numbers == {"2", "12"}
+    assert reviewed_numbers == {"2", "3", "8"}
+
+
+def test_first_mail_counts_replies_to_a_senders_earliest_message(project):
+    def message(sender, sent, thread):
+        return {
+            "thread_id": thread,
+            "message_id": f"{sender}-{sent}-{thread}",
+            "sender": sender,
+            "sent_at": sent,
+        }
+
+    report = compute(
+        {
+            "messages": [
+                message("newbie@example.com", "2026-09-05T00:00:00Z", "t1"),
+                message("other@example.com", "2026-09-06T00:00:00Z", "t1"),
+                message("quiet@example.com", "2026-09-10T00:00:00Z", "t2"),
+                message("late@example.com", "2026-09-12T00:00:00Z", "t3"),
+                message("other@example.com", "2026-10-05T00:00:00Z", "t3"),
+                message("veteran@example.com", "2026-06-01T00:00:00Z", "t4"),
+                message("other@example.com", "2026-06-02T00:00:00Z", "t4"),
+                message("veteran@example.com", "2026-09-02T00:00:00Z", "t5"),
+                message("old@example.com", "2026-08-20T00:00:00Z", "t7"),
+                message("other@example.com", "2026-09-02T00:00:00Z", "t7"),
+                message("solo@example.com", "2026-09-08T00:00:00Z", "t8"),
+                message("solo@example.com", "2026-09-09T00:00:00Z", "t8"),
+                message("host2@example.com", "2026-01-01T00:00:00Z", "t6"),
+                message("joiner@example.com", "2026-09-15T00:00:00Z", "t6"),
+                message("other@example.com", "2026-09-16T00:00:00Z", "t6"),
+            ]
+        },
+        project,
+        AS_OF,
+    )
+    assert _metric(report, "first_mail_sent")["value"] == 5
+    assert _metric(report, "first_mail_replied")["value"] == 4
+    assert _metric(report, "first_mail_unanswered")["value"] == 3
+    assert not any(item["metric_id"] == "first_mail_sent" and item["scope_type"] == "repo" for item in report["metrics"])
+
+
 def test_concentration_below_the_floor_is_withheld(project):
     commits = [
         {

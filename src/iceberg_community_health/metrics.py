@@ -272,6 +272,25 @@ def _pull_metrics(
             response_hours.append((row, hours_between(row["created_at"], reviewed_at)))
     stale_rate = (len(stale) / len(open_now)) if open_now else None
     community_approved = _community_approved(ages, approvals, writers, settings)
+    firsts = _first_author_pulls(opened)
+    went_stale = []
+    merged_first = []
+    reviewed_first = []
+    for row in firsts:
+        created = row["created_at"]
+        stale_at = shift_days(created, settings["stale_days"])
+        still_open = row["closed_at"] is None or row["closed_at"] > stale_at
+        if month_start <= stale_at < month_end and still_open:
+            open_until = row["closed_at"] if row["closed_at"] and row["closed_at"] <= as_of else as_of
+            went_stale.append((row, days_between(created, open_until)))
+
+        if row["merged_at"] and month_start <= row["merged_at"] < month_end:
+            merged_first.append((row, hours_between(created, row["merged_at"])))
+
+        reviewed_at = first_reviews.get((row["repo"], row["number"]))
+        if reviewed_at and month_start <= reviewed_at < month_end and reviewed_at >= created:
+            reviewed_first.append((row, hours_between(created, reviewed_at)))
+
     return [
         _count("pr_inflow", scope_type, scope_id, month_start, month_end, len(inflow), definition, tier),
         _count("pr_closures", scope_type, scope_id, month_start, month_end, len(closed), definition, tier),
@@ -335,6 +354,45 @@ def _pull_metrics(
                 tier,
             ),
             _exemplar_rows(community_approved, "days", "days"),
+        ),
+        _with_exemplars(
+            _count(
+                "first_pr_went_stale",
+                scope_type,
+                scope_id,
+                month_start,
+                month_end,
+                len(went_stale),
+                definition,
+                tier,
+            ),
+            _exemplar_rows(went_stale, "days", "days"),
+        ),
+        _with_exemplars(
+            _count(
+                "first_pr_merged",
+                scope_type,
+                scope_id,
+                month_start,
+                month_end,
+                len(merged_first),
+                definition,
+                tier,
+            ),
+            _exemplar_rows(merged_first, "hours", "days"),
+        ),
+        _with_exemplars(
+            _count(
+                "first_pr_reviewed",
+                scope_type,
+                scope_id,
+                month_start,
+                month_end,
+                len(reviewed_first),
+                definition,
+                tier,
+            ),
+            _exemplar_rows(reviewed_first, "hours", "hours"),
         ),
         _with_exemplars(
             _sample(
@@ -431,6 +489,7 @@ def _mail_metrics(messages, month_start, month_end, floors, definition, project_
         hours_between(first["sent_at"], reply["sent_at"]) for first, reply in started if reply is not None
     ]
     rate = (unanswered / len(started)) if started else None
+    sent, replied, waiting = _first_mail_counts(messages, month_start, month_end)
     labels = [
         message["sentiment"]
         for message in messages
@@ -476,7 +535,73 @@ def _mail_metrics(messages, month_start, month_end, floors, definition, project_
             definition,
             tier,
         ),
+        _count("first_mail_sent", "ecosystem", project_id, month_start, month_end, sent, definition, tier),
+        _count("first_mail_replied", "ecosystem", project_id, month_start, month_end, replied, definition, tier),
+        _count(
+            "first_mail_unanswered",
+            "ecosystem",
+            project_id,
+            month_start,
+            month_end,
+            waiting,
+            definition,
+            tier,
+        ),
     ]
+
+
+def _first_mail_counts(messages: list[dict], month_start: str, month_end: str) -> tuple[int, int, int]:
+    threads: dict[str, list[dict]] = defaultdict(list)
+    for message in messages:
+        threads[message["thread_id"]].append(message)
+    sent = 0
+    replied = 0
+    waiting = 0
+    for first in _first_sender_messages(messages):
+        reply = _first_list_reply(threads.get(first["thread_id"]) or [], first)
+        reply_at = reply["sent_at"] if reply else None
+        if month_start <= first["sent_at"] < month_end:
+            sent += 1
+            if reply_at is None or reply_at >= month_end:
+                waiting += 1
+
+        if reply_at and month_start <= reply_at < month_end:
+            replied += 1
+
+    return sent, replied, waiting
+
+
+def _first_sender_messages(messages: list[dict]) -> list[dict]:
+    earliest: dict[str, str] = {}
+    for message in messages:
+        sender = (message.get("sender") or "").lower()
+        sent = message.get("sent_at")
+        if not sender or not sent:
+            continue
+        if sender not in earliest or sent < earliest[sender]:
+            earliest[sender] = sent
+    chosen = []
+    for message in messages:
+        sender = (message.get("sender") or "").lower()
+        if sender and message.get("sent_at") == earliest.get(sender):
+            chosen.append(message)
+    return chosen
+
+
+def _first_list_reply(thread: list[dict], first: dict) -> dict | None:
+    sender = (first.get("sender") or "").lower()
+    sent = first.get("sent_at")
+    later = [
+        item
+        for item in thread
+        if item.get("sent_at")
+        and sent
+        and item["sent_at"] > sent
+        and (item.get("sender") or "").lower() not in {"", sender}
+    ]
+    if not later:
+        return None
+    return min(later, key=lambda item: item["sent_at"])
 
 
 def _release_metrics(stable, as_of, settings, definition, project, tier):
@@ -624,6 +749,23 @@ def _pull_facts(connection, scope_type, scope_id):
         }
         for repo, number, author, created_at, closed_at, merged_at, closed_by, title in rows
     ]
+
+
+def _first_author_pulls(opened: list[dict]) -> list[dict]:
+    earliest: dict[str, str] = {}
+    for row in opened:
+        author = (row.get("author") or "").lower()
+        created = row.get("created_at")
+        if not author or not created:
+            continue
+        if author not in earliest or created < earliest[author]:
+            earliest[author] = created
+    chosen = []
+    for row in opened:
+        author = (row.get("author") or "").lower()
+        if author and row.get("created_at") == earliest.get(author):
+            chosen.append(row)
+    return chosen
 
 
 def _writers(project: dict) -> dict[str, set[str]]:
